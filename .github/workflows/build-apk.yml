@@ -31,18 +31,18 @@ jobs:
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 cmdline-tools;latest'
 
+      - name: 同步 Capacitor Android 项目
+        run: npx cap add android
+
       - name: 创建签名密钥
         run: |
           keytool -genkey -v \
-            -keystore wenfeng.keystore \
+            -keystore android/wenfeng.keystore \
             -alias wenfeng \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass wenfeng123 \
             -keypass wenfeng123 \
             -dname "CN=Wenfeng, OU=App, O=Wenfeng, L=Beijing, ST=Beijing, C=CN"
-
-      - name: 同步 Capacitor Android 项目
-        run: npx cap add android
 
       - name: 生成 Gradle 签名配置
         run: |
