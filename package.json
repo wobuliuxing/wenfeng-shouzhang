@@ -1,0 +1,14 @@
+{
+  "name": "wenfeng-shouzhang",
+  "version": "2.0.0",
+  "description": "文峰手账 - 纯文字无障碍打卡助手",
+  "scripts": {
+    "build": "echo 'No build step needed - static HTML'",
+    "cap:sync": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/cli": "^6.2.0"
+  }
+}

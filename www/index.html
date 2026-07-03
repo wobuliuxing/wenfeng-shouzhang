@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>文峰手账</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ========== 顶部正能量签名栏 ========== -->
+<header id="top-quote-bar" role="banner">
+  <span id="top-quote-text" aria-live="polite"></span>
+  <span id="top-streak-badge" aria-live="polite">连续0天</span>
+</header>
+
+<!-- ========== 主内容区 ========== -->
+<main id="main-content" role="main"></main>
+
+<!-- ========== 底部4选项卡导航 ========== -->
+<nav id="tab-bar" role="tablist" aria-label="主导航">
+  <button class="tab-btn active" role="tab" aria-selected="true" data-tab="checkin" aria-label="打卡">
+    <span class="tab-icon">&#10003;</span>
+    <span class="tab-label">打卡</span>
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="stats" aria-label="数据">
+    <span class="tab-icon">&#9776;</span>
+    <span class="tab-label">数据</span>
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="reader" aria-label="阅读">
+    <span class="tab-icon">&#9776;</span>
+    <span class="tab-label">阅读</span>
+  </button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="profile" aria-label="我的">
+    <span class="tab-icon">&#9776;</span>
+    <span class="tab-label">我的</span>
+  </button>
+</nav>
+
+<!-- ========== 弹窗容器 ========== -->
+<div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal-box" id="modal-box"></div>
+</div>
+
+<!-- ========== Toast 提示 ========== -->
+<div id="toast" class="toast hidden" role="status" aria-live="assertive"></div>
+
+<!-- JS -->
+<script src="js/quotes.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/checkin.js"></script>
+<script src="js/stats.js"></script>
+<script src="js/reader.js"></script>
+<script src="js/profile.js"></script>
+<script src="js/share.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
