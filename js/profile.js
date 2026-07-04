@@ -17,7 +17,7 @@ function renderProfilePage() {
 
   var avatar = createEl("div", "profile-avatar");
   var uname = getUsername();
-  avatar.textContent = (uname && uname !== "未登录") ? uname[0] : "?";
+  avatar.textContent = (uname && uname !== "未设置") ? uname[0] : "?";
   avatar.setAttribute("aria-hidden", "true");
   profileHeader.appendChild(avatar);
 
@@ -28,10 +28,10 @@ function renderProfilePage() {
 
   var statusEl = createEl("div", "profile-status");
   var streak = getCurrentStreak();
-  if (isLoggedIn()) {
+  if (getUsername() !== "未设置") {
     statusEl.textContent = "连续打卡" + streak + "天";
   } else {
-    statusEl.textContent = "点击登录以同步数据";
+    statusEl.textContent = "设置昵称以显示连续天数";
   }
   info.appendChild(statusEl);
   profileHeader.appendChild(info);
@@ -55,13 +55,9 @@ function renderProfilePage() {
   // ── 设置列表 ──
   var settingsSection = createEl("div", "profile-section");
 
-  // 切换账号
-  var itemAcct = makeSettingItem("账号管理", isLoggedIn() ? getUsername() : "点击注册/登录", function() {
-    if (isLoggedIn()) {
-      showAccountMenu();
-    } else {
-      showLoginForm();
-    }
+  // 修改昵称
+  var itemAcct = makeSettingItem("修改昵称", getUsername(), function() {
+    showNameInput();
   });
   settingsSection.appendChild(itemAcct);
 
@@ -84,8 +80,14 @@ function renderProfilePage() {
   });
   settingsSection.appendChild(itemTheme);
 
+  // ★ 数据备份
+  var itemBackup = makeSettingItem("数据备份与恢复", "导出/导入", function() {
+    showBackupMenu();
+  });
+  settingsSection.appendChild(itemBackup);
+
   // 关于
-  var itemAbout = makeSettingItem("关于文峰手账", "v1.0.0", function() {
+  var itemAbout = makeSettingItem("关于文峰手账", "v2.4.0", function() {
     showAbout();
   });
   settingsSection.appendChild(itemAbout);
@@ -117,136 +119,29 @@ function makeSettingItem(label, value, onClick) {
   return item;
 }
 
-// ══════════════════════════════════════════════
-//  账号管理
-// ══════════════════════════════════════════════
+/**
+ * 手动输入昵称
+ */
+function showNameInput() {
+  var current = getUsername();
+  if (current === "未设置") current = "";
 
-function showAccountMenu() {
-  var html = '<div class="modal-title">账号管理</div>';
-  html += '<div class="modal-body">';
-  html += '<p>当前账号：' + getUsername() + '</p>';
-  html += '<p>连续打卡：' + getCurrentStreak() + '天</p>';
-  html += '<p>金币：' + getCoins() + '</p>';
+  var html = '<div class="modal-title">设置昵称</div>';
+  html += '<p style="font-size:12px;color:#999;margin-bottom:8px;text-align:center">输入你的昵称，用于打卡分享卡片</p>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ni-name">昵称</label>';
+  html += '<input class="form-input" id="ni-name" type="text" placeholder="请输入昵称" value="' + current + '">';
   html += '</div>';
 
-  showModal(html, "退出登录", "关闭", function() {
-    logout();
+  showModal(html, "保存", "取消", function() {
+    var name = document.getElementById("ni-name").value.trim();
+    if (!name) { showToast("昵称不能为空"); return false; }
+    setUsername(name);
     renderProfilePage();
-    showToast("已退出登录");
+    showToast("昵称已设置为「" + name + "」");
     return true;
   });
-
-  setTimeout(function() {
-    var confirmBtn = document.getElementById("modal-confirm-btn");
-    if (confirmBtn) confirmBtn.textContent = "退出登录";
-  }, 0);
-}
-
-function showLoginForm() {
-  var html = '<div class="modal-title">' + (isLoggedIn() ? '登录' : '注册 / 登录') + '</div>';
-
-  if (!isLoggedIn()) {
-    html += '<p style="font-size:12px;color:#999;margin-bottom:8px;text-align:center">首次使用请注册，之后可直接登录</p>';
-  }
-
-  html += '<div class="form-group">';
-  html += '<label class="form-label" for="lf-username">用户名</label>';
-  html += '<input class="form-input" id="lf-username" type="text" placeholder="请输入用户名">';
-  html += '</div>';
-
-  html += '<div class="form-group">';
-  html += '<label class="form-label" for="lf-password">密码</label>';
-  html += '<input class="form-input" id="lf-password" type="password" placeholder="请输入密码">';
-  html += '</div>';
-
-  var buttons = '<div class="modal-actions" style="flex-wrap:wrap;gap:8px">';
-  if (isLoggedIn()) {
-    buttons += '<button class="modal-btn modal-btn-cancel" id="m-cancel">取消</button>';
-    buttons += '<button class="modal-btn modal-btn-confirm" id="m-confirm">登录</button>';
-  } else {
-    buttons += '<button class="modal-btn modal-btn-cancel" id="m-cancel">取消</button>';
-    buttons += '<button class="modal-btn modal-btn-confirm" id="m-confirm">注册</button>';
-    buttons += '<button class="modal-btn modal-btn-cancel" id="m-register">已有账号？登录</button>';
-  }
-  buttons += '</div>';
-
-  // 直接用全局 modal 改装
-  var overlay = document.getElementById("modal-overlay");
-  overlay.classList.remove("hidden");
-  overlay.setAttribute("aria-hidden", "false");
-
-  var box = document.getElementById("modal-box");
-  box.innerHTML = html + buttons;
-  box.querySelector(".modal-title").focus();
-
-  function close() {
-    overlay.classList.add("hidden");
-    overlay.setAttribute("aria-hidden", "true");
-  }
-
-  var cancelBtn = document.getElementById("m-cancel");
-  if (cancelBtn) cancelBtn.addEventListener("click", close);
-
-  var loginBtn = document.getElementById("m-register");
-  if (loginBtn) {
-    loginBtn.addEventListener("click", function() {
-      var username = document.getElementById("lf-username").value.trim();
-      var password = document.getElementById("lf-password").value;
-      if (!username || !password) {
-        showToast("用户名和密码不能为空");
-        return;
-      }
-      var result = loginAccount(username, password);
-      if (result.ok) {
-        close();
-        renderProfilePage();
-        showToast("欢迎回来，" + username);
-      } else {
-        showToast(result.msg);
-      }
-    });
-  }
-
-  var confirmBtn = document.getElementById("m-confirm");
-  if (confirmBtn) {
-    confirmBtn.addEventListener("click", function() {
-      var username = document.getElementById("lf-username").value.trim();
-      var password = document.getElementById("lf-password").value;
-      if (!username || !password) {
-        showToast("用户名和密码不能为空");
-        return;
-      }
-      if (isLoggedIn()) {
-        // 登录
-        var result = loginAccount(username, password);
-        if (result.ok) {
-          close();
-          renderProfilePage();
-          showToast("欢迎回来，" + username);
-        } else {
-          showToast(result.msg);
-        }
-      } else {
-        // 注册
-        var result = registerAccount(username, password);
-        if (result.ok) {
-          close();
-          renderProfilePage();
-          showToast("注册成功！欢迎，" + username);
-        } else {
-          showToast(result.msg);
-        }
-      }
-    });
-  }
-}
-
-function logout() {
-  var data = loadData();
-  data.account.registered = false;
-  data.account.username = "";
-  data.account.passwordHash = "";
-  saveData(data);
 }
 
 // ══════════════════════════════════════════════
@@ -455,13 +350,121 @@ function initTheme() {
 }
 
 // ══════════════════════════════════════════════
+//  数据备份与恢复
+// ══════════════════════════════════════════════
+
+function showBackupMenu() {
+  var html = '<div class="modal-title">数据备份与恢复</div>';
+  html += '<div class="modal-body">';
+  html += '<p style="margin-bottom:8px">将你的打卡记录、金币、主题、书架数据导出为文件，换手机或重装时可以导入恢复。</p>';
+  html += '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">';
+  html += '<button class="btn-primary" id="bk-export" style="min-height:44px">导出备份文件</button>';
+  html += '<button class="btn-secondary" id="bk-import" style="min-height:44px">从文件导入恢复</button>';
+  html += '</div>';
+  html += '</div>';
+
+  showModal(html, null, "关闭", null);
+  setTimeout(function() { var b = document.getElementById("modal-confirm-btn"); if (b) b.style.display = "none"; }, 0);
+
+  setTimeout(function() {
+    var exportBtn = document.getElementById("bk-export");
+    if (exportBtn) exportBtn.addEventListener("click", exportData);
+
+    var importBtn = document.getElementById("bk-import");
+    if (importBtn) importBtn.addEventListener("click", function() {
+      var input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json,application/json";
+      input.addEventListener("change", function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(evt) {
+          try {
+            var data = JSON.parse(evt.target.result);
+            importData(data);
+          } catch (err) {
+            showToast("文件格式错误，无法导入");
+          }
+        };
+        reader.readAsText(file, "UTF-8");
+      });
+      input.click();
+    });
+  }, 50);
+}
+
+function exportData() {
+  var backup = {
+    version: "2.1.0",
+    exportDate: new Date().toISOString(),
+    appData: loadData(),
+    books: getBooks(),
+    bookProgress: JSON.parse(localStorage.getItem("wenfeng_book_progress") || "{}"),
+    theme: {
+      current: getCurrentTheme(),
+      purchased: getPurchasedThemes()
+    }
+  };
+
+  var json = JSON.stringify(backup, null, 2);
+  var blob = new Blob([json], { type: "application/json" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "wenfeng_backup_" + getTodayStr() + ".json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  hideModal();
+  showToast("备份文件已下载");
+}
+
+function importData(backup) {
+  if (!backup || !backup.appData) {
+    showToast("备份文件格式不正确");
+    return;
+  }
+  var html = '<div class="modal-title">确认导入</div>';
+  html += '<div class="modal-body">';
+  html += '<p>即将恢复以下数据：</p>';
+  if (backup.appData.tasks) html += '<p>打卡任务：' + backup.appData.tasks.length + '个</p>';
+  if (backup.books) html += '<p>书架书籍：' + backup.books.length + '本</p>';
+  if (backup.appData.coins !== undefined) html += '<p>金币：' + backup.appData.coins + '</p>';
+  html += '<p style="color:#E64340;margin-top:8px">注意：导入将覆盖当前数据！</p>';
+  html += '</div>';
+
+  showModal(html, "确认导入", "取消", function() {
+    saveData(backup.appData);
+    if (backup.books) localStorage.setItem("wenfeng_books", JSON.stringify(backup.books));
+    if (backup.bookProgress) localStorage.setItem("wenfeng_book_progress", JSON.stringify(backup.bookProgress));
+    if (backup.theme) {
+      setCurrentTheme(backup.theme.current || "default");
+      if (backup.theme.purchased) localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(backup.theme.purchased));
+    }
+    hideModal();
+    initTheme();
+    updateQuoteBar();
+    switchTab("checkin");
+    showToast("数据恢复成功！");
+    return true;
+  });
+
+  setTimeout(function() {
+    var confirmBtn = document.getElementById("modal-confirm-btn");
+    if (confirmBtn) confirmBtn.textContent = "确认导入";
+  }, 0);
+}
+
+// ══════════════════════════════════════════════
 //  关于
 // ══════════════════════════════════════════════
 
 function showAbout() {
   var html = '<div class="modal-title">关于文峰手账</div>';
   html += '<div class="modal-body">';
-  html += '<p>文峰手账 v1.0.0</p>';
+  html += '<p>文峰手账 v2.4.0</p>';
   html += '<p>纯文字无障碍打卡助手</p>';
   html += '<p>专为读屏优化设计</p>';
   html += '<br><p style="font-size:12px;color:#999">坚持打卡，成为更好的自己。</p>';

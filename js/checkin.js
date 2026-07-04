@@ -55,8 +55,10 @@ function refreshCheckinList() {
     var item = createEl("div", "conversation-item");
     item.setAttribute("role", "button");
     item.setAttribute("tabindex", "0");
-    item.setAttribute("aria-label", (checked ? "已打卡 " : "未打卡 ") + task.name +
-      "，" + freqLabel(task.freq) + "，连续" + streak + freqUnit(task.freq) + "，共" + total + "次");
+    var ariaLabel = (checked ? "已打卡 " : "未打卡 ") + task.name;
+    if (task.signature) ariaLabel += "，" + task.signature;
+    ariaLabel += "，" + freqLabel(task.freq) + "，连续" + streak + freqUnit(task.freq) + "，共" + total + "次";
+    item.setAttribute("aria-label", ariaLabel);
 
     // 左侧状态图标
     var statusEl = createEl("div", "ci-status");
@@ -69,7 +71,7 @@ function refreshCheckinList() {
     var title = createEl("div", "ci-title");
     title.textContent = task.name;
     if (task.signature) {
-      title.textContent += "， " + task.signature + "";
+      title.textContent += "，" + task.signature;
     }
     body.appendChild(title);
 
@@ -90,45 +92,36 @@ function refreshCheckinList() {
     body.appendChild(sub);
     item.appendChild(body);
 
-    // 右侧操作
+    // 右侧标签
     var right = createEl("div", "ci-right");
 
-    var btnCheckin = createEl("button", "ci-btn-checkin");
+    var tagEl = createEl("span", "ci-tag");
     if (checked) {
-      btnCheckin.textContent = "已打卡";
-      btnCheckin.classList.add("checked");
-      btnCheckin.setAttribute("aria-label", task.name + " 今日已打卡");
+      tagEl.textContent = "已打卡";
+      tagEl.style.color = "#07C160";
+      tagEl.setAttribute("aria-label", task.name + " 今日已打卡");
     } else {
-      btnCheckin.textContent = "打卡";
-      btnCheckin.setAttribute("aria-label", task.name + " 点击打卡");
+      tagEl.textContent = "未打卡";
+      tagEl.style.color = "#999";
+      tagEl.setAttribute("aria-label", task.name + " 点击打卡");
     }
-    btnCheckin.addEventListener("click", function(e) {
-      e.stopPropagation();
-      if (!checked) handleCheckin(task.id);
-    });
-
-    var btnDetail = createEl("button", "ci-btn-detail");
-    btnDetail.textContent = "详情";
-    btnDetail.setAttribute("aria-label", task.name + " 查看详情");
-    btnDetail.addEventListener("click", function(e) {
-      e.stopPropagation();
-      showTaskDetail(task);
-    });
-
-    right.appendChild(btnCheckin);
-    right.appendChild(btnDetail);
+    right.appendChild(tagEl);
     item.appendChild(right);
 
-    // 点击卡片主体也可以打卡或查看详情
+    // 点击 → 打卡
     item.addEventListener("click", function() {
-      showTaskDetail(task);
+      if (!checked) {
+        handleCheckin(task.id);
+      } else {
+        showToast("今天已经打过卡了");
+      }
     });
 
-    // 长按删除
+    // 长按 → 详情（分享 + 删除）
     var longPressTimer;
     item.addEventListener("touchstart", function() {
       longPressTimer = setTimeout(function() {
-        confirmDeleteTask(task.id, task.name);
+        showTaskDetail(task);
       }, 600);
     });
     item.addEventListener("touchend", function() { clearTimeout(longPressTimer); });
@@ -176,6 +169,14 @@ function showNewTaskForm() {
   showModal(html, "创建", "取消", function() {
     var name = getVal("nf-name").trim();
     if (!name) { showToast("任务名称不能为空"); return false; }
+    // 检查同名任务
+    var existing = getTasks();
+    for (var i = 0; i < existing.length; i++) {
+      if (existing[i].name === name) {
+        showToast("已存在同名任务「" + name + "」，请换一个名称");
+        return false;
+      }
+    }
     var freq = getVal("nf-freq");
     var customDay = "";
     if (freq === "weekly" || freq === "monthly") {
@@ -258,32 +259,36 @@ function showTaskDetail(task) {
     html += '<p style="color:#07C160;margin-top:8px">今日已打卡 ✓</p>';
   }
 
-  // 打卡记录列表
+  // 打卡记录列表（默认最新3条）
   if (task.records.length > 0) {
     html += '<hr style="margin:8px 0;border:0;border-top:1px solid #eee">';
     html += '<p style="font-weight:600">打卡记录（共' + task.records.length + '条）：</p>';
     var sorted = task.records.slice().sort().reverse();
-    sorted.forEach(function(r) {
-      html += '<p style="font-size:13px;margin:2px 0">✓ ' + r + '</p>';
-    });
+    var showCount = Math.min(3, sorted.length);
+    html += '<div id="detail-records-container">';
+    for (var ri = 0; ri < showCount; ri++) {
+      html += '<p style="font-size:13px;margin:2px 0">✓ ' + sorted[ri] + '</p>';
+    }
+    html += '</div>';
+    // 展开更多按钮（记录多于3条时显示）
+    if (sorted.length > 3) {
+      html += '<div style="text-align:center;margin-top:4px">';
+      html += '<button class="btn-text-link" id="btn-expand-records" aria-label="展开更多打卡记录">展开更多记录</button>';
+      html += '</div>';
+    }
   }
 
-  // 分享按钮
-  html += '<div style="text-align:center;margin-top:12px">';
+  // 操作按钮：分享 + 删除
+  html += '<div style="text-align:center;margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
   html += '<button class="btn-share-card" id="btn-share-detail" aria-label="生成分享打卡卡片">分享打卡卡片</button>';
+  html += '<button class="btn-danger" id="btn-delete-detail" aria-label="删除此任务">删除任务</button>';
   html += '</div>';
 
   html += '</div>';
 
-  showModal(html, checked ? null : "打卡", "关闭",
-    function() {
-      if (!checked) handleCheckin(task.id);
-      return true;
-    },
-    function() { hideModal(); }
-  );
+  showModal(html, null, "关闭", null, function() { hideModal(); });
 
-  // 绑定分享按钮事件
+  // 绑定分享和删除按钮事件
   setTimeout(function() {
     var shareBtn = document.getElementById("btn-share-detail");
     if (shareBtn) {
@@ -292,15 +297,34 @@ function showTaskDetail(task) {
         generateShareCard(task);
       });
     }
-  }, 50);
-
-  // 修改确认按钮文字
-  setTimeout(function() {
-    var confirmBtn = document.getElementById("modal-confirm-btn");
-    if (confirmBtn && !checked && task) {
-      confirmBtn.textContent = "打卡";
+    var delBtn = document.getElementById("btn-delete-detail");
+    if (delBtn) {
+      delBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        hideModal();
+        confirmDeleteTask(task.id, task.name);
+      });
     }
-  }, 0);
+    // 展开更多记录按钮
+    var expandBtn = document.getElementById("btn-expand-records");
+    if (expandBtn) {
+      expandBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        var container = document.getElementById("detail-records-container");
+        if (container) {
+          container.innerHTML = "";
+          var sortedRecords = task.records.slice().sort().reverse();
+          for (var ri = 0; ri < sortedRecords.length; ri++) {
+            var p = document.createElement("p");
+            p.style.cssText = "font-size:13px;margin:2px 0";
+            p.textContent = "✓ " + sortedRecords[ri];
+            container.appendChild(p);
+          }
+        }
+        expandBtn.style.display = "none";
+      });
+    }
+  }, 50);
 }
 
 /**

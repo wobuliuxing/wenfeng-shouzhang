@@ -32,10 +32,8 @@ function saveData(data) {
 function getDefaultData() {
   return {
     tasks: [],            // { id, name, freq, note, customDay, signature, records: ["2026-07-01",...], created }
-    account: {            // 本地账号
-      registered: false,
-      username: "",
-      passwordHash: ""
+    account: {            // 简单昵称
+      username: ""
     },
     coins: 0,             // 金币总数
     lastCheckinDate: "",  // 上次打卡日期
@@ -221,34 +219,17 @@ function getPurchasedThemes() {
 }
 
 /**
- * 账号操作
+ * 账号：手动设置昵称
  */
-function registerAccount(username, password) {
+function setUsername(username) {
   var data = loadData();
-  if (data.account.registered) return { ok: false, msg: "已有账号，请先登录" };
-  data.account.registered = true;
-  data.account.username = username;
-  data.account.passwordHash = simpleHash(password);
+  data.account.username = username.trim();
   saveData(data);
-  return { ok: true };
-}
-
-function loginAccount(username, password) {
-  var data = loadData();
-  if (!data.account.registered) return { ok: false, msg: "尚未注册" };
-  if (data.account.username !== username) return { ok: false, msg: "用户名不存在" };
-  if (data.account.passwordHash !== simpleHash(password)) return { ok: false, msg: "密码错误" };
-  return { ok: true, username: data.account.username };
-}
-
-function isLoggedIn() {
-  var data = loadData();
-  return data.account.registered;
 }
 
 function getUsername() {
   var data = loadData();
-  return data.account.username || "未登录";
+  return data.account.username || "未设置";
 }
 
 /**
@@ -385,16 +366,6 @@ function dateEqual(d1, d2) {
   return d1.getFullYear() === d2.getFullYear() &&
          d1.getMonth() === d2.getMonth() &&
          d1.getDate() === d2.getDate();
-}
-
-function simpleHash(str) {
-  var hash = 0;
-  for (var i = 0; i < str.length; i++) {
-    var ch = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + ch;
-    hash |= 0;
-  }
-  return "h_" + hash.toString(36);
 }
 
 function freqLabel(freq) {

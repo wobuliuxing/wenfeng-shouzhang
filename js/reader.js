@@ -1,10 +1,12 @@
 /* ========================================
    阅读选项卡 - 简单文本阅读器
-   支持：添加本地txt文件、滑动阅读、自动书签、百分比跳转
+   支持：添加本地txt文件、分页阅读、横滑行、自动书签
    ======================================== */
 
 var currentBook = null;       // { id, name, content }
-var readerScrollPos = 0;      // 当前阅读位置（字符偏移）
+var currentPage = 1;          // 当前页码
+var totalPages = 1;           // 总页数（目标≈100）
+var PAGE_TARGET = 100;        // 目标总页数
 
 /**
  * 渲染阅读页面（书架列表）
@@ -51,8 +53,12 @@ function refreshBookList() {
 
   books.forEach(function(book) {
     var progress = getBookProgress(book.id);
-    var totalChars = book.content.length;
-    var percent = totalChars > 0 ? Math.round(progress / totalChars * 100) : 0;
+    // 计算总页数和当前进度百分比
+    var paragraphs = book.content.split(/\n+/);
+    var paraCount = paragraphs.length;
+    var parasPerPage = Math.max(1, Math.ceil(paraCount / PAGE_TARGET));
+    var tp = Math.max(1, Math.ceil(paraCount / parasPerPage));
+    var percent = tp > 0 ? Math.round(progress / tp * 100) : 0;
 
     var item = createEl("div", "reader-book-item");
     item.setAttribute("role", "button");
@@ -122,15 +128,39 @@ function openFilePicker() {
  */
 function openReader(book) {
   currentBook = book;
-  var pos = getBookProgress(book.id);
-  readerScrollPos = pos;
 
-  // ★ push 历史记录，按返回键可以回到书架
+  // 计算分页：每个段落为一个单元，按段落数均分到约100页
+  var paragraphs = book.content.split(/\n+/);
+  var paraCount = paragraphs.length;
+  var parasPerPage = Math.max(1, Math.ceil(paraCount / PAGE_TARGET));
+  totalPages = Math.max(1, Math.ceil(paraCount / parasPerPage));
+
+  // 预分页
+  currentBook._pages = [];
+  for (var i = 0; i < totalPages; i++) {
+    var start = i * parasPerPage;
+    var end = Math.min(start + parasPerPage, paraCount);
+    currentBook._pages.push(paragraphs.slice(start, end));
+  }
+
+  // 恢复上次页码
+  var savedPage = getBookProgress(book.id);
+  currentPage = Math.min(savedPage || 1, totalPages);
+
+  // ★ push 历史记录
   history.pushState({ reader: true }, "", location.href);
 
-  // 进入阅读器模式：锁定 body 滚动
+  // 进入阅读器模式
   document.documentElement.classList.add("reader-open");
+  document.getElementById("tab-bar").style.display = "none";
 
+  renderReaderView();
+}
+
+/**
+ * 渲染阅读器视图（当前页）
+ */
+function renderReaderView() {
   var main = document.getElementById("main-content");
   main.innerHTML = "";
 
@@ -148,77 +178,106 @@ function openReader(book) {
   toolbar.appendChild(backBtn);
 
   var titleEl = createEl("div", "ci-title");
-  titleEl.textContent = book.name;
+  titleEl.textContent = currentBook.name;
   titleEl.style.cssText = "flex:1;text-align:center;";
   toolbar.appendChild(titleEl);
 
-  var progressInfo = createEl("div", "reader-progress-info");
-  progressInfo.id = "reader-progress-info";
-  progressInfo.setAttribute("aria-live", "polite");
-  toolbar.appendChild(progressInfo);
+  // 页码显示
+  var pageInfo = createEl("div", "reader-progress-info");
+  pageInfo.id = "reader-page-info";
+  pageInfo.setAttribute("aria-live", "polite");
+  pageInfo.textContent = currentPage + "/" + totalPages;
+  toolbar.appendChild(pageInfo);
 
   page.appendChild(toolbar);
 
-  // 阅读内容区
+  // 阅读内容区 - 分页 + 逐行横滑
   var contentDiv = createEl("div", "reader-content");
   contentDiv.id = "reader-text-content";
-  contentDiv.textContent = book.content;
-  // 滚动到上次位置
-  setTimeout(function() {
-    if (pos > 0) {
-      contentDiv.scrollTop = pos;
+
+  var lines = currentBook._pages[currentPage - 1] || [];
+  lines.forEach(function(line) {
+    var lineBlock = createEl("div", "reader-line");
+    if (line === "" || line === null || line === undefined) {
+      // 空行占位
+      lineBlock.style.minHeight = "1.2em";
+    } else {
+      lineBlock.textContent = line;
     }
-    updateReaderProgress();
-  }, 100);
-  contentDiv.addEventListener("scroll", function() {
-    readerScrollPos = contentDiv.scrollTop;
-    updateReaderProgress();
+    lineBlock.setAttribute("role", "text");
+    contentDiv.appendChild(lineBlock);
   });
+
   page.appendChild(contentDiv);
 
-  // 底部跳转栏
-  var jumpBar = createEl("div", "reader-jump");
-  jumpBar.setAttribute("role", "group");
-  jumpBar.setAttribute("aria-label", "阅读跳转");
+  // 底部导航栏：上一页 / 页码 / 下一页
+  var navBar = createEl("div", "reader-nav");
+  navBar.setAttribute("role", "group");
+  navBar.setAttribute("aria-label", "页面导航");
 
-  var jumpLabel = createEl("span");
-  jumpLabel.textContent = "跳转到";
-  jumpLabel.style.cssText = "font-size:14px;color:#666;";
-  jumpBar.appendChild(jumpLabel);
-
-  var jumpInput = document.createElement("input");
-  jumpInput.type = "number";
-  jumpInput.min = "0";
-  jumpInput.max = "100";
-  jumpInput.value = "0";
-  jumpInput.id = "reader-jump-input";
-  jumpInput.setAttribute("aria-label", "输入百分比数字");
-  jumpBar.appendChild(jumpInput);
-
-  var jumpUnit = createEl("span");
-  jumpUnit.textContent = "%";
-  jumpUnit.style.cssText = "font-size:14px;color:#666;";
-  jumpBar.appendChild(jumpUnit);
-
-  var jumpBtn = createEl("button", "btn-primary");
-  jumpBtn.textContent = "跳转";
-  jumpBtn.style.cssText = "flex:none;padding:6px 16px;font-size:13px;";
-  jumpBtn.addEventListener("click", function() {
-    var pct = parseInt(jumpInput.value);
-    if (isNaN(pct) || pct < 0) pct = 0;
-    if (pct > 100) pct = 100;
-    var target = Math.floor((pct / 100) * (contentDiv.scrollHeight - contentDiv.clientHeight));
-    contentDiv.scrollTop = target;
-    readerScrollPos = target;
-    updateReaderProgress();
+  var prevBtn = createEl("button", "btn-secondary reader-nav-btn");
+  prevBtn.textContent = "上一页";
+  prevBtn.setAttribute("aria-label", "上一页，第" + (currentPage - 1) + "页");
+  if (currentPage <= 1) {
+    prevBtn.disabled = true;
+    prevBtn.style.opacity = "0.4";
+  }
+  prevBtn.addEventListener("click", function() {
+    if (currentPage > 1) goToPage(currentPage - 1);
   });
-  jumpBar.appendChild(jumpBtn);
+  navBar.appendChild(prevBtn);
 
-  page.appendChild(jumpBar);
+  // 页码跳转输入
+  var pageInput = document.createElement("input");
+  pageInput.type = "number";
+  pageInput.min = "1";
+  pageInput.max = totalPages;
+  pageInput.value = currentPage;
+  pageInput.id = "reader-page-input";
+  pageInput.setAttribute("aria-label", "跳转到第几页，共" + totalPages + "页");
+  pageInput.style.cssText = "width:60px;text-align:center;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:14px;";
+  pageInput.addEventListener("change", function() {
+    var p = parseInt(this.value);
+    if (!isNaN(p) && p >= 1 && p <= totalPages) {
+      goToPage(p);
+    } else {
+      this.value = currentPage;
+    }
+  });
+  navBar.appendChild(pageInput);
+
+  var pageLabel = createEl("span");
+  pageLabel.textContent = "/ " + totalPages + " 页";
+  pageLabel.style.cssText = "font-size:13px;color:#999;white-space:nowrap;";
+  navBar.appendChild(pageLabel);
+
+  var nextBtn = createEl("button", "btn-secondary reader-nav-btn");
+  nextBtn.textContent = "下一页";
+  nextBtn.setAttribute("aria-label", "下一页，第" + (currentPage + 1) + "页");
+  if (currentPage >= totalPages) {
+    nextBtn.disabled = true;
+    nextBtn.style.opacity = "0.4";
+  }
+  nextBtn.addEventListener("click", function() {
+    if (currentPage < totalPages) goToPage(currentPage + 1);
+  });
+  navBar.appendChild(nextBtn);
+
+  page.appendChild(navBar);
   main.appendChild(page);
+}
 
-  // 隐藏底部选项卡
-  document.getElementById("tab-bar").style.display = "none";
+/**
+ * 跳转到指定页
+ */
+function goToPage(pageNum) {
+  if (pageNum < 1 || pageNum > totalPages) return;
+  currentPage = pageNum;
+  saveBookProgress(currentBook.id, currentPage);
+  renderReaderView();
+  // 滚动内容区到顶部
+  var content = document.getElementById("reader-text-content");
+  if (content) content.scrollTop = 0;
 }
 
 /**
@@ -226,33 +285,21 @@ function openReader(book) {
  */
 function closeReader() {
   if (currentBook) {
-    saveBookProgress(currentBook.id, readerScrollPos);
+    saveBookProgress(currentBook.id, currentPage);
   }
   currentBook = null;
+  currentPage = 1;
+  totalPages = 1;
   document.documentElement.classList.remove("reader-open");
   document.getElementById("tab-bar").style.display = "flex";
   renderReaderPage();
 }
 
 /**
- * 更新阅读进度显示
+ * 更新阅读进度显示（已废弃，页码直接显示）
  */
 function updateReaderProgress() {
-  var contentDiv = document.getElementById("reader-text-content");
-  var progressInfo = document.getElementById("reader-progress-info");
-  if (!contentDiv || !progressInfo) return;
-
-  var total = contentDiv.scrollHeight - contentDiv.clientHeight;
-  var percent = total > 0 ? Math.round((contentDiv.scrollTop / total) * 100) : 0;
-  progressInfo.textContent = percent + "%";
-
-  // 保存书签（每3秒自动保存一次）
-  if (currentBook && readerScrollPos !== null) {
-    clearTimeout(window._saveTimer);
-    window._saveTimer = setTimeout(function() {
-      saveBookProgress(currentBook.id, contentDiv.scrollTop);
-    }, 3000);
-  }
+  // 分页模式不需要 scroll-based 进度
 }
 
 /**

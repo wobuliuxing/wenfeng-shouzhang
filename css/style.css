@@ -262,55 +262,23 @@ html.reader-open #tab-bar {
   flex-wrap: wrap;
 }
 
-/* 右侧信息 */
+/* 右侧标签 */
 .ci-right {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
   flex-shrink: 0;
   margin-left: 8px;
 }
 
-.ci-btn-checkin {
-  background: var(--brand);
-  color: #FFFFFF;
-  border: none;
-  padding: 4px 14px;
-  border-radius: 4px;
+.ci-tag {
   font-size: var(--font-xs);
-  cursor: pointer;
+  font-weight: 500;
   white-space: nowrap;
-  min-height: 30px;
-}
-
-.ci-btn-checkin:active {
-  background: var(--brand-dark);
-}
-
-.ci-btn-checkin:focus-visible {
-  outline: 3px solid var(--brand);
-  outline-offset: 2px;
-}
-
-.ci-btn-checkin.checked {
+  padding: 2px 8px;
+  border-radius: 4px;
   background: var(--bg-secondary);
-  color: var(--text-hint);
-  border: 1px solid var(--border);
-}
-
-.ci-btn-detail {
-  background: none;
-  border: none;
-  color: var(--info);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  padding: 2px 6px;
-}
-
-.ci-btn-detail:focus-visible {
-  outline: 2px solid var(--info);
-  outline-offset: 1px;
+  border: 1px solid var(--border-light);
 }
 
 /* 空状态 */
@@ -565,23 +533,6 @@ html.reader-open #tab-bar {
 }
 
 /* 阅读器内容页 */
-.reader-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-.reader-progress-info {
-  font-size: var(--font-xs);
-  color: var(--text-hint);
-}
-
 /* 阅读器页面 - flex 布局，内容区可滚动 */
 #page-reader-view {
   display: flex;
@@ -600,47 +551,60 @@ html.reader-open #tab-bar {
   flex-shrink: 0;
 }
 
+.reader-progress-info {
+  font-size: var(--font-xs);
+  color: var(--text-hint);
+}
+
 .reader-content {
   flex: 1;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 20px 16px;
+  padding: 16px 16px;
   font-size: var(--font-lg);
-  line-height: 2;
+  line-height: 2.2;
   color: var(--text-primary);
-  white-space: pre-wrap;
-  word-break: break-all;
   background: var(--bg);
 }
 
-.reader-jump {
+/* 每一行都是一个可横滑的块 */
+.reader-line {
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
+  min-height: 1.6em;
+  /* 横滑滚动条美化 */
+  scrollbar-width: thin;
+  scrollbar-color: #ccc transparent;
+}
+.reader-line::-webkit-scrollbar {
+  height: 3px;
+}
+.reader-line::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 2px;
+}
+
+/* 底部翻页导航 */
+.reader-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 16px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }
 
-/* 百分比跳转 */
-.reader-jump {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: var(--bg);
-  border-top: 1px solid var(--border);
-}
-
-.reader-jump input {
-  width: 60px;
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  text-align: center;
-  font-size: var(--font-sm);
+.reader-nav-btn {
+  padding: 6px 16px !important;
+  font-size: 13px !important;
+  min-height: 36px !important;
 }
 
 /* ── 我的 / Profile ── */
@@ -850,6 +814,22 @@ html.reader-open #tab-bar {
 .btn-share-card:focus-visible {
   outline: 3px solid #FF9500;
   outline-offset: 2px;
+}
+
+/* 文字链接按钮（展开更多） */
+.btn-text-link {
+  background: none;
+  border: none;
+  color: var(--info);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  padding: 4px 8px;
+  text-decoration: underline;
+}
+
+.btn-text-link:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
 }
 
 /* ── Toast ── */

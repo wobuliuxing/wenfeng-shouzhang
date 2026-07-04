@@ -72,7 +72,7 @@ function switchTab(tab) {
 
   // 关闭阅读器（如果在阅读中切走）
   if (currentBook) {
-    saveBookProgress(currentBook.id, readerScrollPos);
+    saveBookProgress(currentBook.id, currentPage);
     currentBook = null;
     document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
@@ -84,10 +84,7 @@ function switchTab(tab) {
     case "checkin":
       renderCheckinPage();
       break;
-    case "stats":
-      renderStatsPage();
-      break;
-    case "reader":
+case "reader":
       renderReaderPage();
       break;
     case "profile":
@@ -116,7 +113,7 @@ function updateQuoteBar() {
 
 function closeReaderIfOpen() {
   if (currentBook) {
-    saveBookProgress(currentBook.id, readerScrollPos);
+    saveBookProgress(currentBook.id, currentPage);
     currentBook = null;
     document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";

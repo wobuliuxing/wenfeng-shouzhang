@@ -1,0 +1,11 @@
+{
+  "name": "文峰手账",
+  "short_name": "文峰手账",
+  "description": "纯文字无障碍打卡助手",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#07C160",
+  "orientation": "portrait",
+  "icons": []
+}

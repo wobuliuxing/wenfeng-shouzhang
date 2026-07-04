@@ -26,20 +26,23 @@ function generateShareCard(task) {
   var todayStr = getTodayStr();
   var quote = getTodayQuote();
 
-  // ── 背景：柔白渐变 ──
+  // 获取当前主题
+  var theme = getThemeById(getCurrentTheme());
+  var isCatTheme = theme.id.indexOf("cat_") === 0;
+
+  // ── 背景：使用主题色 ──
   var bgGrad = ctx.createLinearGradient(0, 0, 0, h);
-  bgGrad.addColorStop(0, "#FFFDF7");
-  bgGrad.addColorStop(0.3, "#FFFDF4");
-  bgGrad.addColorStop(0.7, "#FFF9EE");
-  bgGrad.addColorStop(1, "#FFF5E5");
+  bgGrad.addColorStop(0, theme.bg);
+  bgGrad.addColorStop(0.5, theme.bgSecondary);
+  bgGrad.addColorStop(1, theme.bg);
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, w, h);
 
   // ── 顶部品牌色带 ──
   var bannerH = 160;
   var bannerGrad = ctx.createLinearGradient(0, 0, w, 0);
-  bannerGrad.addColorStop(0, "#07C160");
-  bannerGrad.addColorStop(1, "#06AD56");
+  bannerGrad.addColorStop(0, theme.brand);
+  bannerGrad.addColorStop(1, lightenColor(theme.brand, 0.85));
   ctx.fillStyle = bannerGrad;
   ctx.fillRect(0, 0, w, bannerH);
 
@@ -62,8 +65,15 @@ function generateShareCard(task) {
   ctx.lineTo(w, bannerH);
   ctx.lineTo(0, bannerH);
   ctx.closePath();
-  ctx.fillStyle = "#FFFDF7";
+  ctx.fillStyle = theme.bg;
   ctx.fill();
+
+  // ── 猫咪主题装饰：猫爪印 ──
+  if (isCatTheme) {
+    drawCatPaw(ctx, 100, bannerH + 95, 0.8, theme.brand);
+    drawCatPaw(ctx, 650, bannerH + 85, 0.5, theme.brand);
+    drawCatPaw(ctx, 580, bannerH + 120, 0.35, theme.brand);
+  }
 
   // ── 中央任务信息卡片 ──
   var cardY = bannerH + 50;
@@ -72,9 +82,9 @@ function generateShareCard(task) {
 
   // 白色卡片背景
   roundRect(ctx, cardX, cardY, cardW, 340, 20);
-  ctx.fillStyle = "#FFFFFF";
+  ctx.fillStyle = theme.id === "dark" ? "#2D2D2D" : "#FFFFFF";
   ctx.fill();
-  ctx.strokeStyle = "#F0E8D8";
+  ctx.strokeStyle = theme.border;
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
@@ -184,7 +194,7 @@ function generateShareCard(task) {
   ctx.beginPath();
   ctx.moveTo(padding + 30, sepY);
   ctx.lineTo(w - padding - 30, sepY);
-  ctx.strokeStyle = "#E8DCC8";
+  ctx.strokeStyle = theme.border;
   ctx.lineWidth = 1;
   ctx.setLineDash([6, 6]);
   ctx.stroke();
@@ -231,13 +241,20 @@ function generateShareCard(task) {
   ctx.fillText("— 文峰手账 · 记录每一天 —", w / 2, dateY + 50);
 
   // ── 底部水印装饰 ──
-  ctx.fillStyle = "rgba(7,193,96,0.04)";
+  var wmAlpha = theme.id === "dark" ? 0.08 : 0.04;
+  ctx.fillStyle = hexToRgba(theme.brand, wmAlpha);
   ctx.beginPath();
   ctx.arc(w - 80, h - 80, 120, 0, Math.PI * 2);
   ctx.fill();
   ctx.beginPath();
   ctx.arc(80, h - 200, 60, 0, Math.PI * 2);
   ctx.fill();
+
+  // 主题名
+  ctx.fillStyle = hexToRgba(theme.textPrimary, 0.25);
+  ctx.font = "16px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("主题：" + theme.name, w / 2, h - 30);
 
   // ── 导出图片 ──
   canvas.toBlob(function(blob) {
@@ -354,4 +371,50 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
+}
+
+/**
+ * 颜色加亮
+ */
+function lightenColor(hex, factor) {
+  var r = parseInt(hex.slice(1, 3), 16);
+  var g = parseInt(hex.slice(3, 5), 16);
+  var b = parseInt(hex.slice(5, 7), 16);
+  r = Math.min(255, Math.round(r + (255 - r) * factor));
+  g = Math.min(255, Math.round(g + (255 - g) * factor));
+  b = Math.min(255, Math.round(b + (255 - b) * factor));
+  return "rgb(" + r + "," + g + "," + b + ")";
+}
+
+/**
+ * hex 转 rgba
+ */
+function hexToRgba(hex, alpha) {
+  var r = parseInt(hex.slice(1, 3), 16);
+  var g = parseInt(hex.slice(3, 5), 16);
+  var b = parseInt(hex.slice(5, 7), 16);
+  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+}
+
+/**
+ * 绘制猫爪印
+ */
+function drawCatPaw(ctx, x, y, scale, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.15;
+  // 主肉垫
+  ctx.beginPath();
+  ctx.ellipse(0, 10, 14, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // 四个趾头
+  var toes = [[-14, -8], [-5, -16], [5, -16], [14, -8]];
+  toes.forEach(function(t) {
+    ctx.beginPath();
+    ctx.ellipse(t[0], t[1], 5, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
 }
