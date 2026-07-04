@@ -29,7 +29,8 @@ function renderProfilePage() {
 
   var info = createEl("div", "profile-info");
   var nameEl = createEl("div", "profile-name");
-  nameEl.textContent = uname;
+  // 名字 + 连续天数放一起
+  nameEl.textContent = uname + "  连续" + streak + "天";
   info.appendChild(nameEl);
 
   // 等级徽章
@@ -41,18 +42,15 @@ function renderProfilePage() {
   }
   info.appendChild(levelEl);
 
+  // 金币 + 鼓励语合并一行
   var statusEl = createEl("div", "profile-status");
-  if (registered) {
-    statusEl.textContent = "连续打卡" + streak + "天  |  " + coins + "金币";
-  } else {
-    statusEl.textContent = "连续打卡" + streak + "天  |  点击登录同步数据";
-  }
+  statusEl.textContent = "你已坚持打卡" + streak + "天，继续加油哦！  |  " + coins + "金币";
   info.appendChild(statusEl);
   profileHeader.appendChild(info);
   header.appendChild(profileHeader);
   page.appendChild(header);
 
-  // ── 金币展示 ──
+  // ── 金币展示（精简，去掉重复的连续天数） ──
   var coinSection = createEl("div", "profile-section");
   var coinDisplay = createEl("div", "coin-display");
   coinDisplay.setAttribute("aria-label", "当前金币：" + coins + "个");
@@ -81,66 +79,20 @@ function renderProfilePage() {
     mainSection.appendChild(itemLogin);
   }
 
-  // 主题商店（改名）
+  // 主题商店
   var currentThemeName = getThemeName(getCurrentTheme());
   var itemTheme = makeSettingItem("主题商店", currentThemeName, function() {
     showThemeShop();
   });
   mainSection.appendChild(itemTheme);
 
+  // 设置入口（所有设置统一放入）
+  var itemSettings = makeSettingItem("设置", "铃声 / 备份 / 云同步", function() {
+    showSettingsMenu();
+  });
+  mainSection.appendChild(itemSettings);
+
   page.appendChild(mainSection);
-
-  // ── 设置 ──
-  var settingsSection = createEl("div", "profile-section");
-
-  var settingsHeader = createEl("div", "section-header");
-  settingsHeader.textContent = "设置";
-  settingsSection.appendChild(settingsHeader);
-
-  // 打卡铃声
-  var itemSound = makeSettingItem("打卡铃声", getSoundEnabled() ? "已开启" : "已关闭", function() {
-    toggleSound();
-  });
-  settingsSection.appendChild(itemSound);
-
-  // 自定义铃声
-  var itemSoundFile = makeSettingItem("自定义铃声", "点击选择", function() {
-    pickCustomSound();
-  });
-  settingsSection.appendChild(itemSoundFile);
-
-  // 数据备份
-  var itemBackup = makeSettingItem("数据备份与恢复", "导出/导入", function() {
-    showBackupMenu();
-  });
-  settingsSection.appendChild(itemBackup);
-
-  // 云同步开关（默认关闭）
-  var syncOn = getCloudSyncEnabled();
-  var itemSync = makeSettingItem("多端云同步", syncOn ? "已开启" : "已关闭", function() {
-    toggleCloudSync();
-  });
-  settingsSection.appendChild(itemSync);
-
-  // 排行榜开关（默认关闭）
-  var lbOn = getLeaderboardEnabled();
-  var itemLb = makeSettingItem("金币排行榜", lbOn ? "已开启" : "已关闭", function() {
-    toggleLeaderboard();
-  });
-  settingsSection.appendChild(itemLb);
-
-  // 排行榜开启时显示查看入口
-  if (lbOn) {
-    var itemViewLb = makeSettingItem("查看排行榜", "点击查看", function() {
-      initCloudBase(function(err) {
-        if (err) { showToast("云服务未就绪"); return; }
-        showLeaderboard();
-      });
-    });
-    settingsSection.appendChild(itemViewLb);
-  }
-
-  page.appendChild(settingsSection);
 
   // 关于
   var aboutSection = createEl("div", "profile-section");
@@ -151,6 +103,103 @@ function renderProfilePage() {
   page.appendChild(aboutSection);
 
   main.appendChild(page);
+}
+
+/**
+ * 设置菜单（弹窗，包含铃声、备份、云同步、排行榜）
+ */
+function showSettingsMenu() {
+  var syncOn = getCloudSyncEnabled();
+  var lbOn = getLeaderboardEnabled();
+
+  var html = '<div class="modal-title">设置</div>';
+  html += '<div class="modal-body" style="padding:0">';
+
+  // 打卡铃声
+  html += '<div class="setting-item" role="button" tabindex="0" aria-label="打卡铃声：' + (getSoundEnabled() ? "已开启" : "已关闭") + '">';
+  html += '<span class="si-label">打卡铃声</span>';
+  html += '<span class="si-value">' + (getSoundEnabled() ? "已开启" : "已关闭") + '</span>';
+  html += '<span class="si-arrow">></span>';
+  html += '</div>';
+
+  // 自定义铃声
+  html += '<div class="setting-item" role="button" tabindex="0" aria-label="自定义铃声：点击选择">';
+  html += '<span class="si-label">自定义铃声</span>';
+  html += '<span class="si-value">点击选择</span>';
+  html += '<span class="si-arrow">></span>';
+  html += '</div>';
+
+  // 数据备份
+  html += '<div class="setting-item" role="button" tabindex="0" aria-label="数据备份与恢复：导出/导入">';
+  html += '<span class="si-label">数据备份与恢复</span>';
+  html += '<span class="si-value">导出/导入</span>';
+  html += '<span class="si-arrow">></span>';
+  html += '</div>';
+
+  // 云同步
+  html += '<div class="setting-item" role="button" tabindex="0" aria-label="多端云同步：' + (syncOn ? "已开启" : "已关闭") + '">';
+  html += '<span class="si-label">多端云同步</span>';
+  html += '<span class="si-value">' + (syncOn ? "已开启" : "已关闭") + '</span>';
+  html += '<span class="si-arrow">></span>';
+  html += '</div>';
+
+  // 排行榜
+  html += '<div class="setting-item" role="button" tabindex="0" aria-label="金币排行榜：' + (lbOn ? "已开启" : "已关闭") + '">';
+  html += '<span class="si-label">金币排行榜</span>';
+  html += '<span class="si-value">' + (lbOn ? "已开启" : "已关闭") + '</span>';
+  html += '<span class="si-arrow">></span>';
+  html += '</div>';
+
+  // 排行榜开启时显示查看入口
+  if (lbOn) {
+    html += '<div class="setting-item" role="button" tabindex="0" aria-label="查看排行榜：点击查看">';
+    html += '<span class="si-label">查看排行榜</span>';
+    html += '<span class="si-value">点击查看</span>';
+    html += '<span class="si-arrow">></span>';
+    html += '</div>';
+  }
+
+  html += '</div>';
+
+  showModal(html, null, "关闭", null);
+
+  // 绑定点击事件
+  setTimeout(function() {
+    var items = document.querySelectorAll("#modal-box .setting-item");
+
+    function updateItemValue(idx, text) {
+      var valEl = items[idx].querySelector(".si-value");
+      if (valEl) valEl.textContent = text;
+    }
+
+    if (items.length >= 1) items[0].addEventListener("click", function() {
+      toggleSound();
+      updateItemValue(0, getSoundEnabled() ? "已开启" : "已关闭");
+    });
+    if (items.length >= 2) items[1].addEventListener("click", function() { pickCustomSound(); });
+    if (items.length >= 3) items[2].addEventListener("click", function() { showBackupMenu(); });
+    if (items.length >= 4) items[3].addEventListener("click", function() {
+      toggleCloudSync();
+      updateItemValue(3, getCloudSyncEnabled() ? "已开启" : "已关闭");
+    });
+    if (items.length >= 5) items[4].addEventListener("click", function() {
+      toggleLeaderboard();
+      // 排行榜开关会增减"查看排行榜"项，需要重新渲染弹窗
+      hideModal();
+      setTimeout(function() { showSettingsMenu(); }, 80);
+    });
+    if (lbOn && items.length >= 6) {
+      items[5].addEventListener("click", function() {
+        initCloudBase(function(err) {
+          if (err) { showToast("云服务未就绪"); return; }
+          showLeaderboard();
+        });
+      });
+    }
+    // 隐藏确认按钮
+    var confirmBtn = document.getElementById("modal-confirm-btn");
+    if (confirmBtn) confirmBtn.style.display = "none";
+  }, 50);
 }
 
 function makeSettingItem(label, value, onClick) {

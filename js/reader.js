@@ -298,7 +298,7 @@ function goToPage(pageNum) {
 }
 
 /**
- * 关闭阅读器，保存书签
+ * 关闭阅读器，保存书签（程序调用，需消耗 pushState）
  */
 function closeReader() {
   if (currentBook) {
@@ -310,6 +310,9 @@ function closeReader() {
   document.documentElement.classList.remove("reader-open");
   document.getElementById("tab-bar").style.display = "flex";
   renderReaderPage();
+  // 消耗 openReader 时 push 的历史记录
+  _skipPopstate = true;
+  history.back();
 }
 
 /**

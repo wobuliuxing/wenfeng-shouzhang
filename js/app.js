@@ -6,6 +6,7 @@
 var currentTab = null; // 初始为 null，确保首次 switchTab("checkin") 能正常渲染
 var _modalStack = []; // 弹窗历史栈，支持层级返回
 var _skipPopstate = false; // 修复弹窗不关闭：标记跳过 popstate 处理
+var _savedScrollY = 0; // 弹窗打开前的滚动位置，用于恢复
 
 /** DOM Ready */
 document.addEventListener("DOMContentLoaded", function() {
@@ -59,7 +60,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
   // ★ History API：按返回键时关闭弹窗或阅读器，而不是退出 app
   window.addEventListener("popstate", function(e) {
-    // 修复：hideModal 已处理好关闭，跳过
+    // 程序关闭弹窗/阅读器时主动调了 history.back()，跳过
     if (_skipPopstate) {
       _skipPopstate = false;
       return;
@@ -70,9 +71,15 @@ document.addEventListener("DOMContentLoaded", function() {
       _doHideModal();
       return;
     }
-    // 其次关阅读器
+    // 其次关阅读器（硬件返回键，不要调 history.back()，浏览器已弹出）
     if (currentBook) {
-      closeReaderIfOpen();
+      saveBookProgress(currentBook.id, currentPage);
+      currentBook = null;
+      currentPage = 1;
+      totalPages = 1;
+      document.documentElement.classList.remove("reader-open");
+      document.getElementById("tab-bar").style.display = "flex";
+      renderReaderPage();
       return;
     }
     // 都没有，阻止退出（回到首页）
@@ -104,6 +111,7 @@ function switchTab(tab) {
     currentBook = null;
     document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
+    _skipPopstate = true;
     history.back();
   }
 
@@ -137,7 +145,7 @@ function updateQuoteBar() {
   var badge = document.getElementById("top-streak-badge");
   if (badge) {
     var streak = getCurrentStreak();
-    badge.textContent = "连续" + streak + "天";
+    badge.textContent = "坚持" + streak + "天";
   }
 }
 
@@ -145,9 +153,13 @@ function closeReaderIfOpen() {
   if (currentBook) {
     saveBookProgress(currentBook.id, currentPage);
     currentBook = null;
+    currentPage = 1;
+    totalPages = 1;
     document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
     renderReaderPage();
+    // 消耗 openReader 时 push 的历史记录
+    _skipPopstate = true;
     history.back();
   }
 }
@@ -205,6 +217,10 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
   overlay.classList.remove("hidden");
   overlay.classList.add("modal-visible");
   overlay.setAttribute("aria-hidden", "false");
+
+  // ★ 保存滚动位置，用 fixed 锁定 body 防止跳动
+  _savedScrollY = window.scrollY;
+  document.body.style.top = (-_savedScrollY) + "px";
   document.body.classList.add("modal-open");
 
   // ★ push 历史记录，这样按返回键可以关闭弹窗
@@ -243,10 +259,13 @@ function _doHideModal() {
   overlay.setAttribute("aria-hidden", "true");
   document.getElementById("modal-box").innerHTML = "";
   document.body.classList.remove("modal-open");
+  // ★ 恢复滚动位置，防止页面跳动
+  document.body.style.top = "";
+  window.scrollTo(0, _savedScrollY);
 }
 
 /**
- * Toast 提示
+ * Toast 提示（30秒后自动消失）
  */
 function showToast(msg) {
   var toast = document.getElementById("toast");
@@ -255,7 +274,7 @@ function showToast(msg) {
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(function() {
     toast.classList.add("hidden");
-  }, 2000);
+  }, 30000);
 }
 
 /* ========================================
