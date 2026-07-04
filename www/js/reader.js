@@ -125,6 +125,12 @@ function openReader(book) {
   var pos = getBookProgress(book.id);
   readerScrollPos = pos;
 
+  // ★ push 历史记录，按返回键可以回到书架
+  history.pushState({ reader: true }, "", location.href);
+
+  // 进入阅读器模式：锁定 body 滚动
+  document.documentElement.classList.add("reader-open");
+
   var main = document.getElementById("main-content");
   main.innerHTML = "";
 
@@ -223,6 +229,7 @@ function closeReader() {
     saveBookProgress(currentBook.id, readerScrollPos);
   }
   currentBook = null;
+  document.documentElement.classList.remove("reader-open");
   document.getElementById("tab-bar").style.display = "flex";
   renderReaderPage();
 }

@@ -74,8 +74,9 @@ function switchTab(tab) {
   if (currentBook) {
     saveBookProgress(currentBook.id, readerScrollPos);
     currentBook = null;
+    document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
-    history.back(); // 弹出阅读器的历史记录
+    history.back();
   }
 
   // 渲染对应页面
@@ -94,9 +95,8 @@ function switchTab(tab) {
       break;
   }
 
-  // 滚动到顶部
-  var main = document.getElementById("main-content");
-  if (main) main.scrollTop = 0;
+  // 滚动到顶部（body 级滚动）
+  window.scrollTo({ top: 0, behavior: "instant" });
 }
 
 /**
@@ -118,9 +118,10 @@ function closeReaderIfOpen() {
   if (currentBook) {
     saveBookProgress(currentBook.id, readerScrollPos);
     currentBook = null;
+    document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
     renderReaderPage();
-    history.back(); // 弹出阅读器的历史记录
+    history.back();
   }
 }
 
