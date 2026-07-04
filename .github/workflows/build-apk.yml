@@ -32,7 +32,9 @@ jobs:
           packages: 'platforms;android-34 build-tools;34.0.0 cmdline-tools;latest'
 
       - name: 同步 Capacitor Android 项目
-        run: npx cap add android
+        run: |
+          npx cap add android
+          npx cap sync android
 
       - name: 创建签名密钥
         run: |
