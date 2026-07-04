@@ -29,8 +29,8 @@ function renderProfilePage() {
 
   var info = createEl("div", "profile-info");
   var nameEl = createEl("div", "profile-name");
-  // 名字 + 连续天数放一起
-  nameEl.textContent = uname + "  连续" + streak + "天";
+  // 名字后面只放一个：你已坚持N天
+  nameEl.textContent = uname + "  你已坚持" + streak + "天";
   info.appendChild(nameEl);
 
   // 等级徽章
@@ -42,26 +42,13 @@ function renderProfilePage() {
   }
   info.appendChild(levelEl);
 
-  // 金币 + 鼓励语合并一行
+  // 鼓励语（去掉金币，只保留鼓励）
   var statusEl = createEl("div", "profile-status");
-  statusEl.textContent = "你已坚持打卡" + streak + "天，继续加油哦！  |  " + coins + "金币";
+  statusEl.textContent = "你已坚持打卡" + streak + "天，继续加油哦！  |  当前一共" + coins + "金币";
   info.appendChild(statusEl);
   profileHeader.appendChild(info);
   header.appendChild(profileHeader);
   page.appendChild(header);
-
-  // ── 金币展示（精简，去掉重复的连续天数） ──
-  var coinSection = createEl("div", "profile-section");
-  var coinDisplay = createEl("div", "coin-display");
-  coinDisplay.setAttribute("aria-label", "当前金币：" + coins + "个");
-  coinDisplay.innerHTML = '<span class="coin-icon">&#9679;</span> ' + coins + ' 金币';
-  coinSection.appendChild(coinDisplay);
-
-  var coinHint = createEl("div");
-  coinHint.style.cssText = "text-align:center;font-size:12px;color:#999;padding:4px 0 12px;";
-  coinHint.textContent = "每天第一个打卡可得金币，连续N天=N金币！";
-  coinSection.appendChild(coinHint);
-  page.appendChild(coinSection);
 
   // ── 账号与主题 ──
   var mainSection = createEl("div", "profile-section");
