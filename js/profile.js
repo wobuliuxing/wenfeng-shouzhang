@@ -11,13 +11,19 @@ function renderProfilePage() {
 
   var page = createEl("div", "tab-page active", { id: "page-profile" });
 
+  var uname = getUsername();
+  if (uname === "未设置") uname = "点击登录";
+  var level = getUserLevel();
+  var streak = getCurrentStreak();
+  var coins = getCoins();
+  var registered = isRegistered();
+
   // ── 头像区域 ──
   var header = createEl("div", "profile-section");
   var profileHeader = createEl("div", "profile-header");
 
   var avatar = createEl("div", "profile-avatar");
-  var uname = getUsername();
-  avatar.textContent = (uname && uname !== "未设置") ? uname[0] : "?";
+  avatar.textContent = (uname && uname !== "点击登录") ? uname[0] : "?";
   avatar.setAttribute("aria-hidden", "true");
   profileHeader.appendChild(avatar);
 
@@ -26,12 +32,20 @@ function renderProfilePage() {
   nameEl.textContent = uname;
   info.appendChild(nameEl);
 
+  // 等级徽章
+  var levelEl = createEl("div", "profile-level");
+  levelEl.innerHTML = '<span class="level-badge">' + level.badge + ' Lv.' + level.level + '</span> <span class="level-name">' + level.name + '</span>';
+  if (level.level < 9) {
+    var prog = getLevelProgress();
+    levelEl.innerHTML += ' <span class="level-progress">(' + prog.pct + '%)</span>';
+  }
+  info.appendChild(levelEl);
+
   var statusEl = createEl("div", "profile-status");
-  var streak = getCurrentStreak();
-  if (getUsername() !== "未设置") {
-    statusEl.textContent = "连续打卡" + streak + "天";
+  if (registered) {
+    statusEl.textContent = "连续打卡" + streak + "天  |  " + coins + "金币";
   } else {
-    statusEl.textContent = "设置昵称以显示连续天数";
+    statusEl.textContent = "连续打卡" + streak + "天  |  点击登录同步数据";
   }
   info.appendChild(statusEl);
   profileHeader.appendChild(info);
@@ -41,25 +55,47 @@ function renderProfilePage() {
   // ── 金币展示 ──
   var coinSection = createEl("div", "profile-section");
   var coinDisplay = createEl("div", "coin-display");
-  coinDisplay.setAttribute("aria-label", "当前金币：" + getCoins() + "个");
-  coinDisplay.innerHTML = '<span class="coin-icon">&#9679;</span> ' + getCoins() + ' 金币';
-  coinDisplay.style.cssText = "padding:16px;background:#FFF8E1;";
+  coinDisplay.setAttribute("aria-label", "当前金币：" + coins + "个");
+  coinDisplay.innerHTML = '<span class="coin-icon">&#9679;</span> ' + coins + ' 金币';
   coinSection.appendChild(coinDisplay);
 
   var coinHint = createEl("div");
   coinHint.style.cssText = "text-align:center;font-size:12px;color:#999;padding:4px 0 12px;";
-  coinHint.textContent = "连续打卡N天=N金币，一天比一天多！";
+  coinHint.textContent = "每天第一个打卡可得金币，连续N天=N金币！";
   coinSection.appendChild(coinHint);
   page.appendChild(coinSection);
 
-  // ── 设置列表 ──
+  // ── 账号与主题 ──
+  var mainSection = createEl("div", "profile-section");
+
+  // 账号管理
+  if (registered) {
+    var itemAcct = makeSettingItem("账号管理", uname, function() {
+      showAccountInfo();
+    });
+    mainSection.appendChild(itemAcct);
+  } else {
+    var itemLogin = makeSettingItem("登录 / 注册", "点击注册账号", function() {
+      showLoginRegister();
+    });
+    mainSection.appendChild(itemLogin);
+  }
+
+  // 主题商店（改名）
+  var currentThemeName = getThemeName(getCurrentTheme());
+  var itemTheme = makeSettingItem("主题商店", currentThemeName, function() {
+    showThemeShop();
+  });
+  mainSection.appendChild(itemTheme);
+
+  page.appendChild(mainSection);
+
+  // ── 设置 ──
   var settingsSection = createEl("div", "profile-section");
 
-  // 修改昵称
-  var itemAcct = makeSettingItem("修改昵称", getUsername(), function() {
-    showNameInput();
-  });
-  settingsSection.appendChild(itemAcct);
+  var settingsHeader = createEl("div", "section-header");
+  settingsHeader.textContent = "设置";
+  settingsSection.appendChild(settingsHeader);
 
   // 打卡铃声
   var itemSound = makeSettingItem("打卡铃声", getSoundEnabled() ? "已开启" : "已关闭", function() {
@@ -67,32 +103,52 @@ function renderProfilePage() {
   });
   settingsSection.appendChild(itemSound);
 
-  // 铃声选择
+  // 自定义铃声
   var itemSoundFile = makeSettingItem("自定义铃声", "点击选择", function() {
     pickCustomSound();
   });
   settingsSection.appendChild(itemSoundFile);
 
-  // 主题设置
-  var currentThemeName = getThemeName(getCurrentTheme());
-  var itemTheme = makeSettingItem("更换背景主题", currentThemeName, function() {
-    showThemeShop();
-  });
-  settingsSection.appendChild(itemTheme);
-
-  // ★ 数据备份
+  // 数据备份
   var itemBackup = makeSettingItem("数据备份与恢复", "导出/导入", function() {
     showBackupMenu();
   });
   settingsSection.appendChild(itemBackup);
 
-  // 关于
-  var itemAbout = makeSettingItem("关于文峰手账", "v2.4.0", function() {
-    showAbout();
+  // 云同步开关（默认关闭）
+  var syncOn = getCloudSyncEnabled();
+  var itemSync = makeSettingItem("多端云同步", syncOn ? "已开启" : "已关闭", function() {
+    toggleCloudSync();
   });
-  settingsSection.appendChild(itemAbout);
+  settingsSection.appendChild(itemSync);
+
+  // 排行榜开关（默认关闭）
+  var lbOn = getLeaderboardEnabled();
+  var itemLb = makeSettingItem("金币排行榜", lbOn ? "已开启" : "已关闭", function() {
+    toggleLeaderboard();
+  });
+  settingsSection.appendChild(itemLb);
+
+  // 排行榜开启时显示查看入口
+  if (lbOn) {
+    var itemViewLb = makeSettingItem("查看排行榜", "点击查看", function() {
+      initCloudBase(function(err) {
+        if (err) { showToast("云服务未就绪"); return; }
+        showLeaderboard();
+      });
+    });
+    settingsSection.appendChild(itemViewLb);
+  }
 
   page.appendChild(settingsSection);
+
+  // 关于
+  var aboutSection = createEl("div", "profile-section");
+  var itemAbout = makeSettingItem("关于文峰手账", "v2.5.0", function() {
+    showAbout();
+  });
+  aboutSection.appendChild(itemAbout);
+  page.appendChild(aboutSection);
 
   main.appendChild(page);
 }
@@ -120,33 +176,211 @@ function makeSettingItem(label, value, onClick) {
 }
 
 /**
- * 手动输入昵称
+ * 登录 / 注册表单
  */
-function showNameInput() {
-  var current = getUsername();
-  if (current === "未设置") current = "";
-
-  var html = '<div class="modal-title">设置昵称</div>';
-  html += '<p style="font-size:12px;color:#999;margin-bottom:8px;text-align:center">输入你的昵称，用于打卡分享卡片</p>';
+function showLoginRegister() {
+  var html = '<div class="modal-title">登录 / 注册</div>';
+  html += '<p style="font-size:12px;color:#999;margin-bottom:8px;text-align:center">首次使用请注册，之后可直接登录。注册后昵称将绑定账号。</p>';
 
   html += '<div class="form-group">';
-  html += '<label class="form-label" for="ni-name">昵称</label>';
-  html += '<input class="form-input" id="ni-name" type="text" placeholder="请输入昵称" value="' + current + '">';
+  html += '<label class="form-label" for="lr-username">用户名</label>';
+  html += '<input class="form-input" id="lr-username" type="text" placeholder="请输入用户名">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="lr-password">密码</label>';
+  html += '<input class="form-input" id="lr-password" type="password" placeholder="请输入密码">';
+  html += '</div>';
+
+  html += '<div style="display:flex;gap:10px;justify-content:center">';
+  html += '<button class="btn-primary" id="lr-register" style="flex:1;min-height:44px">注册</button>';
+  html += '<button class="btn-secondary" id="lr-login" style="flex:1;min-height:44px">登录</button>';
+  html += '</div>';
+
+  showModal(html, null, "取消", null, function() { hideModal(); });
+
+  setTimeout(function() {
+    var regBtn = document.getElementById("lr-register");
+    var loginBtn = document.getElementById("lr-login");
+
+    if (regBtn) regBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      var username = document.getElementById("lr-username").value.trim();
+      var password = document.getElementById("lr-password").value;
+      if (!username || !password) { showToast("用户名和密码不能为空"); return; }
+      if (username.length < 2) { showToast("用户名至少2个字符"); return; }
+      if (password.length < 4) { showToast("密码至少4个字符"); return; }
+      var result = registerAccount(username, password);
+      if (result.ok) {
+        // 同时注册 CloudBase 账号（同步功能用）
+        if (getCloudSyncEnabled()) {
+          initCloudBase(function() {
+            cloudSignUp(username, password, function() {});
+          });
+        }
+        hideModal();
+        renderProfilePage();
+        updateQuoteBar();
+        showToast("注册成功！欢迎，" + username);
+      } else {
+        showToast(result.msg);
+      }
+    });
+
+    if (loginBtn) loginBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      var username = document.getElementById("lr-username").value.trim();
+      var password = document.getElementById("lr-password").value;
+      if (!username || !password) { showToast("用户名和密码不能为空"); return; }
+      var result = loginAccount(username, password);
+      if (result.ok) {
+        // 同时登录 CloudBase（同步功能用）
+        if (getCloudSyncEnabled()) {
+          initCloudBase(function() {
+            cloudSignIn(username, password, function() {
+              cloudSync(function() {
+                renderProfilePage();
+                updateQuoteBar();
+                switchTab("checkin");
+              });
+            });
+          });
+        }
+        hideModal();
+        renderProfilePage();
+        updateQuoteBar();
+        showToast("欢迎回来，" + username);
+      } else {
+        showToast(result.msg);
+      }
+    });
+  }, 50);
+}
+
+/**
+ * 账号信息编辑（已登录）
+ */
+function showAccountInfo() {
+  var uname = getUsername();
+  var gender = getGender();
+  var age = getAge();
+
+  var html = '<div class="modal-title">账号管理</div>';
+  html += '<div class="modal-body">';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ai-nickname">昵称</label>';
+  html += '<input class="form-input" id="ai-nickname" type="text" placeholder="请输入昵称" value="' + uname + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ai-gender">性别</label>';
+  html += '<select class="form-select" id="ai-gender">';
+  html += '<option value="">保密</option>';
+  html += '<option value="男"' + (gender === "男" ? " selected" : "") + '>男</option>';
+  html += '<option value="女"' + (gender === "女" ? " selected" : "") + '>女</option>';
+  html += '</select>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ai-age">年龄</label>';
+  html += '<input class="form-input" id="ai-age" type="number" min="1" max="150" placeholder="请输入年龄" value="' + age + '">';
+  html += '</div>';
+
+  html += '</div>';
+
+  html += '<div style="text-align:center;margin-top:8px">';
+  html += '<button class="btn-danger" id="ai-logout" style="min-height:36px">退出登录</button>';
   html += '</div>';
 
   showModal(html, "保存", "取消", function() {
-    var name = document.getElementById("ni-name").value.trim();
-    if (!name) { showToast("昵称不能为空"); return false; }
-    setUsername(name);
+    var nick = document.getElementById("ai-nickname").value.trim();
+    if (nick) setUsername(nick);
+    var g = document.getElementById("ai-gender").value;
+    setGender(g);
+    var a = document.getElementById("ai-age").value;
+    setAge(a);
     renderProfilePage();
-    showToast("昵称已设置为「" + name + "」");
+    showToast("个人信息已保存");
     return true;
   });
+
+  setTimeout(function() {
+    var logoutBtn = document.getElementById("ai-logout");
+    if (logoutBtn) logoutBtn.addEventListener("click", function(e) {
+      e.stopPropagation();
+      hideModal();
+      showConfirmLogout();
+    });
+  }, 50);
+}
+
+function showConfirmLogout() {
+  var html = '<div class="modal-title">确认退出</div>';
+  html += '<div class="modal-body">退出登录后，本地数据仍保留。重新登录同一账号可继续使用。</div>';
+  showModal(html, "退出", "取消", function() {
+    logoutAccount();
+    renderProfilePage();
+    showToast("已退出登录");
+    return true;
+  });
+  setTimeout(function() {
+    var confirmBtn = document.getElementById("modal-confirm-btn");
+    if (confirmBtn) { confirmBtn.classList.add("modal-btn-danger"); confirmBtn.textContent = "退出"; }
+  }, 0);
 }
 
 // ══════════════════════════════════════════════
-//  铃声
+//  云同步 & 排行榜开关
 // ══════════════════════════════════════════════
+
+function getCloudSyncEnabled() {
+  var key = "wenfeng_cloud_sync";
+  return localStorage.getItem(key) === "true";
+}
+
+function setCloudSyncEnabled(on) {
+  localStorage.setItem("wenfeng_cloud_sync", on ? "true" : "false");
+}
+
+function toggleCloudSync() {
+  var on = !getCloudSyncEnabled();
+  setCloudSyncEnabled(on);
+  if (on) {
+    showToast("多端云同步已开启，正在连接...");
+    initCloudBase(function(err) {
+      if (err) { showToast("云服务连接失败：" + err.message); return; }
+      cloudSignInAnonymously(function() {
+        cloudSync(function(e, action) {
+          if (e) { showToast("同步失败：" + e.message); return; }
+          showToast("同步完成！(" + action + ")");
+        });
+      });
+    });
+  } else {
+    showToast("多端云同步已关闭");
+  }
+  renderProfilePage();
+}
+
+function getLeaderboardEnabled() {
+  var key = "wenfeng_leaderboard";
+  return localStorage.getItem(key) === "true";
+}
+
+function setLeaderboardEnabled(on) {
+  localStorage.setItem("wenfeng_leaderboard", on ? "true" : "false");
+}
+
+function toggleLeaderboard() {
+  var on = !getLeaderboardEnabled();
+  setLeaderboardEnabled(on);
+  if (on) {
+    initCloudBase(function() {}); // 静默初始化
+  }
+  showToast("金币排行榜已" + (on ? "开启" : "关闭"));
+  renderProfilePage();
+}
 
 function toggleSound() {
   var enabled = getSoundEnabled();
@@ -250,7 +484,38 @@ var THEMES = [
     brand: "#F48FB1", border: "#F8BBD0" },
   { id: "cat_sleep", name: "瞌睡猫咪", cost: 15,
     bg: "#F5F0FF", bgSecondary: "#EDE7F6", textPrimary: "#311B92",
-    brand: "#B39DDB", border: "#D1C4E9" }
+    brand: "#B39DDB", border: "#D1C4E9" },
+  // ── 治愈系卡通系列 ──
+  { id: "shiba", name: "微笑柴犬", cost: 10,
+    bg: "#FFFDF5", bgSecondary: "#FFF3E0", textPrimary: "#5D4037",
+    brand: "#FF8A65", border: "#FFCC80" },
+  { id: "bunny", name: "奶糖白兔", cost: 10,
+    bg: "#FFFBFB", bgSecondary: "#FFF0F5", textPrimary: "#4A2828",
+    brand: "#F8BBD0", border: "#FFCDD2" },
+  { id: "bear", name: "小熊软糖", cost: 10,
+    bg: "#FFFDF9", bgSecondary: "#FDE8C8", textPrimary: "#4E342E",
+    brand: "#FFB74D", border: "#FFE0B2" },
+  { id: "deer", name: "小鹿斑比", cost: 10,
+    bg: "#FFFDF7", bgSecondary: "#E8F5E9", textPrimary: "#2E4A2E",
+    brand: "#8D6E63", border: "#C8E6C9" },
+  { id: "cloud", name: "云朵棉花", cost: 10,
+    bg: "#FBFDFF", bgSecondary: "#E3F2FD", textPrimary: "#1A3A4A",
+    brand: "#90CAF9", border: "#BBDEFB" },
+  { id: "sakura", name: "樱花飞舞", cost: 15,
+    bg: "#FFFBFB", bgSecondary: "#FCE4EC", textPrimary: "#4A1A2A",
+    brand: "#F48FB1", border: "#F8BBD0" },
+  { id: "succulent", name: "多肉花园", cost: 10,
+    bg: "#FDFDF5", bgSecondary: "#E8F5E9", textPrimary: "#2E4A2E",
+    brand: "#81C784", border: "#C8E6C9" },
+  { id: "dolphin", name: "海豚湾", cost: 15,
+    bg: "#F5FDFF", bgSecondary: "#E0F7FA", textPrimary: "#0D3B4A",
+    brand: "#4DD0E1", border: "#B2EBF2" },
+  { id: "starry", name: "星空物语", cost: 15,
+    bg: "#1A1A2E", bgSecondary: "#16213E", textPrimary: "#E0E0E0",
+    brand: "#7C83FD", border: "#0F3460" },
+  { id: "forest", name: "森林小熊", cost: 10,
+    bg: "#F5F9F0", bgSecondary: "#E8F0DE", textPrimary: "#3D4A2E",
+    brand: "#A5B87A", border: "#D4E0C8" }
 ];
 
 function getThemeName(themeId) {
@@ -396,7 +661,7 @@ function showBackupMenu() {
 
 function exportData() {
   var backup = {
-    version: "2.1.0",
+    version: "2.5.0",
     exportDate: new Date().toISOString(),
     appData: loadData(),
     books: getBooks(),
@@ -404,6 +669,10 @@ function exportData() {
     theme: {
       current: getCurrentTheme(),
       purchased: getPurchasedThemes()
+    },
+    cloudSettings: {
+      sync: getCloudSyncEnabled(),
+      leaderboard: getLeaderboardEnabled()
     }
   };
 
@@ -443,6 +712,10 @@ function importData(backup) {
       setCurrentTheme(backup.theme.current || "default");
       if (backup.theme.purchased) localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(backup.theme.purchased));
     }
+    if (backup.cloudSettings) {
+      setCloudSyncEnabled(backup.cloudSettings.sync || false);
+      setLeaderboardEnabled(backup.cloudSettings.leaderboard || false);
+    }
     hideModal();
     initTheme();
     updateQuoteBar();
@@ -464,7 +737,7 @@ function importData(backup) {
 function showAbout() {
   var html = '<div class="modal-title">关于文峰手账</div>';
   html += '<div class="modal-body">';
-  html += '<p>文峰手账 v2.4.0</p>';
+  html += '<p>文峰手账 v2.5.0</p>';
   html += '<p>纯文字无障碍打卡助手</p>';
   html += '<p>专为读屏优化设计</p>';
   html += '<br><p style="font-size:12px;color:#999">坚持打卡，成为更好的自己。</p>';

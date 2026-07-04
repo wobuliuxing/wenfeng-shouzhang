@@ -5,8 +5,8 @@
 
 var currentBook = null;       // { id, name, content }
 var currentPage = 1;          // 当前页码
-var totalPages = 1;           // 总页数（目标≈100）
-var PAGE_TARGET = 100;        // 目标总页数
+var totalPages = 1;           // 总页数
+var CHARS_PER_PAGE = 3000;    // 每页约3000字
 
 /**
  * 渲染阅读页面（书架列表）
@@ -53,12 +53,10 @@ function refreshBookList() {
 
   books.forEach(function(book) {
     var progress = getBookProgress(book.id);
-    // 计算总页数和当前进度百分比
-    var paragraphs = book.content.split(/\n+/);
-    var paraCount = paragraphs.length;
-    var parasPerPage = Math.max(1, Math.ceil(paraCount / PAGE_TARGET));
-    var tp = Math.max(1, Math.ceil(paraCount / parasPerPage));
-    var percent = tp > 0 ? Math.round(progress / tp * 100) : 0;
+    // 按字符数估算总页数
+    var totalChars = book.content.length;
+    var estPages = Math.max(1, Math.ceil(totalChars / CHARS_PER_PAGE));
+    var percent = Math.round(progress / estPages * 100);
 
     var item = createEl("div", "reader-book-item");
     item.setAttribute("role", "button");
@@ -129,19 +127,40 @@ function openFilePicker() {
 function openReader(book) {
   currentBook = book;
 
-  // 计算分页：每个段落为一个单元，按段落数均分到约100页
+  // 按固定字符数分页（约3000字/页，段落边界断开）
   var paragraphs = book.content.split(/\n+/);
-  var paraCount = paragraphs.length;
-  var parasPerPage = Math.max(1, Math.ceil(paraCount / PAGE_TARGET));
-  totalPages = Math.max(1, Math.ceil(paraCount / parasPerPage));
-
-  // 预分页
   currentBook._pages = [];
-  for (var i = 0; i < totalPages; i++) {
-    var start = i * parasPerPage;
-    var end = Math.min(start + parasPerPage, paraCount);
-    currentBook._pages.push(paragraphs.slice(start, end));
+  var currentPageContent = [];
+  var charCount = 0;
+
+  for (var i = 0; i < paragraphs.length; i++) {
+    var para = paragraphs[i];
+    var paraLen = para.length;
+
+    // 如果当前页已经有内容，且加上这个段落会超过限制
+    if (charCount > 0 && charCount + paraLen > CHARS_PER_PAGE) {
+      currentBook._pages.push(currentPageContent);
+      currentPageContent = [];
+      charCount = 0;
+    }
+
+    currentPageContent.push(para);
+    charCount += paraLen;
+
+    // 如果单段落就超过限制，也推到下一页
+    if (charCount >= CHARS_PER_PAGE && i < paragraphs.length - 1) {
+      currentBook._pages.push(currentPageContent);
+      currentPageContent = [];
+      charCount = 0;
+    }
   }
+
+  // 最后一页
+  if (currentPageContent.length > 0) {
+    currentBook._pages.push(currentPageContent);
+  }
+
+  totalPages = Math.max(1, currentBook._pages.length);
 
   // 恢复上次页码
   var savedPage = getBookProgress(book.id);
@@ -199,12 +218,10 @@ function renderReaderView() {
   lines.forEach(function(line) {
     var lineBlock = createEl("div", "reader-line");
     if (line === "" || line === null || line === undefined) {
-      // 空行占位
       lineBlock.style.minHeight = "1.2em";
     } else {
       lineBlock.textContent = line;
     }
-    lineBlock.setAttribute("role", "text");
     contentDiv.appendChild(lineBlock);
   });
 

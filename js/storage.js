@@ -33,11 +33,16 @@ function getDefaultData() {
   return {
     tasks: [],            // { id, name, freq, note, customDay, signature, records: ["2026-07-01",...], created }
     account: {            // 简单昵称
-      username: ""
+      username: "",
+      gender: "",         // "男" / "女" / ""
+      age: "",            // 年龄（字符串）
+      registered: false,  // 是否注册（用于区分完整账号和本地昵称）
+      passwordHash: ""    // 密码哈希
     },
     coins: 0,             // 金币总数
     lastCheckinDate: "",  // 上次打卡日期
     currentStreak: 0,     // 当前连续天数
+    todayCoinDate: "",    // 哪天发过金币（每天只发一次）
     theme: "default",     // 当前主题名
     purchasedThemes: ["default"], // 已购买主题
     soundEnabled: true,   // 打卡铃声开关
@@ -149,8 +154,15 @@ function doCheckin(tid) {
   }
 
   data.lastCheckinDate = today;
-  var coinsEarned = data.currentStreak; // 第N天得N金币
-  data.coins += coinsEarned;
+
+  // ★ 每天只有第一个打卡发金币
+  var coinsEarned = 0;
+  if (data.todayCoinDate !== today) {
+    coinsEarned = data.currentStreak; // 第N天得N金币
+    data.coins += coinsEarned;
+    data.todayCoinDate = today;
+  }
+
   saveData(data);
 
   return {
@@ -230,6 +242,66 @@ function setUsername(username) {
 function getUsername() {
   var data = loadData();
   return data.account.username || "未设置";
+}
+
+function getGender() {
+  return loadData().account.gender || "";
+}
+
+function setGender(gender) {
+  var data = loadData();
+  data.account.gender = gender;
+  saveData(data);
+}
+
+function getAge() {
+  return loadData().account.age || "";
+}
+
+function setAge(age) {
+  var data = loadData();
+  data.account.age = age;
+  saveData(data);
+}
+
+function isRegistered() {
+  return loadData().account.registered || false;
+}
+
+function registerAccount(username, password) {
+  var data = loadData();
+  if (data.account.registered) return { ok: false, msg: "账号已注册，请登录" };
+  data.account.registered = true;
+  data.account.username = username.trim();
+  data.account.passwordHash = simpleHash(password);
+  saveData(data);
+  return { ok: true };
+}
+
+function loginAccount(username, password) {
+  var data = loadData();
+  if (!data.account.registered) return { ok: false, msg: "尚未注册，请先注册" };
+  if (data.account.username !== username.trim()) return { ok: false, msg: "用户名不存在" };
+  if (data.account.passwordHash !== simpleHash(password)) return { ok: false, msg: "密码错误" };
+  return { ok: true, username: data.account.username };
+}
+
+function logoutAccount() {
+  var data = loadData();
+  data.account.registered = false;
+  data.account.passwordHash = "";
+  // 保留本地数据
+  saveData(data);
+}
+
+function simpleHash(str) {
+  var hash = 0;
+  for (var i = 0; i < str.length; i++) {
+    var ch = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + ch;
+    hash |= 0;
+  }
+  return "h_" + hash.toString(36);
 }
 
 /**
@@ -376,4 +448,47 @@ function freqLabel(freq) {
 function freqUnit(freq) {
   var map = { daily: "天", weekly: "周", monthly: "月" };
   return map[freq] || "天";
+}
+
+/* ========================================
+   等级体系
+   ======================================== */
+
+var LEVELS = [
+  { level: 1, name: "初心萌芽", minDays: 0, badge: "🌱" },
+  { level: 2, name: "嫩芽新绿", minDays: 2, badge: "🌿" },
+  { level: 3, name: "一周小苗", minDays: 7, badge: "☘️" },
+  { level: 4, name: "月度小树", minDays: 30, badge: "🌳" },
+  { level: 5, name: "季度繁花", minDays: 90, badge: "🌸" },
+  { level: 6, name: "半年硕果", minDays: 180, badge: "🍎" },
+  { level: 7, name: "年度参天", minDays: 365, badge: "🌲" },
+  { level: 8, name: "两年不凋", minDays: 730, badge: "🌾" },
+  { level: 9, name: "三年永恒", minDays: 1095, badge: "✨" }
+];
+
+function getUserLevel() {
+  var streak = getCurrentStreak();
+  var level = LEVELS[0];
+  for (var i = LEVELS.length - 1; i >= 0; i--) {
+    if (streak >= LEVELS[i].minDays) {
+      level = LEVELS[i];
+      break;
+    }
+  }
+  return level;
+}
+
+function getLevelProgress() {
+  var streak = getCurrentStreak();
+  var currentLevel = getUserLevel();
+  var nextLevel = LEVELS[currentLevel.level]; // same level if max, or next
+  if (currentLevel.level >= LEVELS.length) {
+    // 已满级
+    return { current: streak, next: streak, pct: 100 };
+  }
+  var nextMinDays = LEVELS[currentLevel.level].minDays;
+  var prevMinDays = currentLevel.minDays;
+  if (nextMinDays === prevMinDays) return { current: streak, next: nextMinDays, pct: 100 };
+  var pct = Math.min(100, Math.round((streak - prevMinDays) / (nextMinDays - prevMinDays) * 100));
+  return { current: streak, next: nextMinDays, pct: pct };
 }

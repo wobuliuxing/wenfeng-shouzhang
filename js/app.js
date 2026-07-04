@@ -5,12 +5,35 @@
 
 var currentTab = null; // 初始为 null，确保首次 switchTab("checkin") 能正常渲染
 var _modalStack = []; // 弹窗历史栈，支持层级返回
+var _skipPopstate = false; // 修复弹窗不关闭：标记跳过 popstate 处理
 
 /** DOM Ready */
 document.addEventListener("DOMContentLoaded", function() {
   initTheme();
   updateQuoteBar();
   switchTab("checkin");
+
+  // 初始化 CloudBase（异步，不阻塞页面）
+  initCloudBase(function(err) {
+    if (err) { console.warn("CloudBase 初始化失败:", err); return; }
+    // 如果已开启云同步，尝试自动同步
+    if (getCloudSyncEnabled()) {
+      cloudSignInAnonymously(function() {
+        cloudDownloadData(function(e, data) {
+          if (!e && data && data.appData) {
+            // 云端有数据，提示用户
+            showToast("云数据已同步");
+            if (data.appData) {
+              saveData(data.appData);
+            }
+            initTheme();
+            updateQuoteBar();
+            switchTab("checkin");
+          }
+        });
+      });
+    }
+  });
 
   // 选项卡点击
   var tabBtns = document.querySelectorAll(".tab-btn");
@@ -36,6 +59,11 @@ document.addEventListener("DOMContentLoaded", function() {
 
   // ★ History API：按返回键时关闭弹窗或阅读器，而不是退出 app
   window.addEventListener("popstate", function(e) {
+    // 修复：hideModal 已处理好关闭，跳过
+    if (_skipPopstate) {
+      _skipPopstate = false;
+      return;
+    }
     // 优先关弹窗
     if (_modalStack.length > 0) {
       _modalStack.pop();
@@ -92,8 +120,10 @@ case "reader":
       break;
   }
 
-  // 滚动到顶部（body 级滚动）
-  window.scrollTo({ top: 0, behavior: "instant" });
+  // 检查 body 是否在顶部，不在则静默回到顶部
+  if (window.scrollY > 10) {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
 }
 
 /**
@@ -175,6 +205,7 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
   overlay.classList.remove("hidden");
   overlay.classList.add("modal-visible");
   overlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("modal-open");
 
   // ★ push 历史记录，这样按返回键可以关闭弹窗
   _modalStack.push({ onConfirm: onConfirm, onCancel: onCancel });
@@ -197,7 +228,8 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
 function hideModal() {
   if (_modalStack.length > 0) {
     _modalStack.pop();
-    // 手动触发 history.back()，会触发 popstate 事件
+    _doHideModal();
+    _skipPopstate = true;
     history.back();
     return;
   }
@@ -210,6 +242,7 @@ function _doHideModal() {
   overlay.classList.add("hidden");
   overlay.setAttribute("aria-hidden", "true");
   document.getElementById("modal-box").innerHTML = "";
+  document.body.classList.remove("modal-open");
 }
 
 /**

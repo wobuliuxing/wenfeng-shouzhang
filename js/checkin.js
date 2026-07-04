@@ -229,9 +229,13 @@ function handleCheckin(tid) {
   }
   if (result.success) {
     playCheckinSound();
-    showToast(
-      result.taskName + " 打卡成功！+" + result.coinsEarned +
-      "金币（连续" + result.streak + "天）");
+    if (result.coinsEarned > 0) {
+      showToast(
+        result.taskName + " 打卡成功！+" + result.coinsEarned +
+        "金币（连续" + result.streak + "天）");
+    } else {
+      showToast(result.taskName + " 打卡成功！（今日金币已领取）");
+    }
     refreshCheckinList();
     updateQuoteBar();
   }
