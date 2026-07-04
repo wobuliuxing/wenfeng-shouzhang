@@ -83,7 +83,7 @@ function renderProfilePage() {
 
   // 关于
   var aboutSection = createEl("div", "profile-section");
-  var itemAbout = makeSettingItem("关于文峰手账", "v2.5.0", function() {
+  var itemAbout = makeSettingItem("关于文峰手账", "v2.6.1", function() {
     showAbout();
   });
   aboutSection.appendChild(itemAbout);
