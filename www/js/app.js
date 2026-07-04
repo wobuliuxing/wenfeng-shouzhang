@@ -3,7 +3,8 @@
    处理导航、弹窗、Toast、生命周期
    ======================================== */
 
-var currentTab = "checkin";
+var currentTab = null; // 初始为 null，确保首次 switchTab("checkin") 能正常渲染
+var _modalStack = []; // 弹窗历史栈，支持层级返回
 
 /** DOM Ready */
 document.addEventListener("DOMContentLoaded", function() {
@@ -32,6 +33,26 @@ document.addEventListener("DOMContentLoaded", function() {
   document.addEventListener("dblclick", function(e) {
     e.preventDefault();
   }, { passive: false });
+
+  // ★ History API：按返回键时关闭弹窗或阅读器，而不是退出 app
+  window.addEventListener("popstate", function(e) {
+    // 优先关弹窗
+    if (_modalStack.length > 0) {
+      _modalStack.pop();
+      _doHideModal();
+      return;
+    }
+    // 其次关阅读器
+    if (currentBook) {
+      closeReaderIfOpen();
+      return;
+    }
+    // 都没有，阻止退出（回到首页）
+    history.pushState({ home: true }, "", location.href);
+  });
+
+  // 初始 push 一个 home state，这样第一次按返回不会退出
+  history.pushState({ home: true }, "", location.href);
 });
 
 /**
@@ -54,6 +75,7 @@ function switchTab(tab) {
     saveBookProgress(currentBook.id, readerScrollPos);
     currentBook = null;
     document.getElementById("tab-bar").style.display = "flex";
+    history.back(); // 弹出阅读器的历史记录
   }
 
   // 渲染对应页面
@@ -98,6 +120,7 @@ function closeReaderIfOpen() {
     currentBook = null;
     document.getElementById("tab-bar").style.display = "flex";
     renderReaderPage();
+    history.back(); // 弹出阅读器的历史记录
   }
 }
 
@@ -152,7 +175,12 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
   }
 
   overlay.classList.remove("hidden");
+  overlay.classList.add("modal-visible");
   overlay.setAttribute("aria-hidden", "false");
+
+  // ★ push 历史记录，这样按返回键可以关闭弹窗
+  _modalStack.push({ onConfirm: onConfirm, onCancel: onCancel });
+  history.pushState({ modal: true }, "", location.href);
 
   // 焦点放到弹窗
   setTimeout(function() {
@@ -169,7 +197,18 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
 }
 
 function hideModal() {
+  if (_modalStack.length > 0) {
+    _modalStack.pop();
+    // 手动触发 history.back()，会触发 popstate 事件
+    history.back();
+    return;
+  }
+  _doHideModal();
+}
+
+function _doHideModal() {
   var overlay = document.getElementById("modal-overlay");
+  overlay.classList.remove("modal-visible");
   overlay.classList.add("hidden");
   overlay.setAttribute("aria-hidden", "true");
   document.getElementById("modal-box").innerHTML = "";
