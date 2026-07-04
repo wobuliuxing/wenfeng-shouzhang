@@ -31,6 +31,12 @@ jobs:
         with:
           packages: 'platforms;android-34 build-tools;34.0.0 cmdline-tools;latest'
 
+      - name: 准备 Web 资源到 www 目录
+        run: |
+          mkdir -p www
+          cp index.html manifest.json www/
+          cp -r css js www/
+
       - name: 同步 Capacitor Android 项目
         run: |
           npx cap add android
