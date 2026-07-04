@@ -68,13 +68,24 @@ jobs:
           # 引用签名配置
           sed -i '/apply plugin: .com.android.application./a apply from: "signing.gradle"' android/app/build.gradle
 
+      - name: 生成版本号
+        run: |
+          VERSION="v2.1.0-$(date +%Y%m%d)"
+          echo "VERSION_TAG=$VERSION" >> $GITHUB_ENV
+          echo "版本号: $VERSION"
+
       - name: 构建 APK
         run: |
           cd android
           ./gradlew assembleRelease
 
+      - name: 重命名 APK
+        run: |
+          mv android/app/build/outputs/apk/release/app-release.apk \
+             android/app/build/outputs/apk/release/wenfeng-shouzhang-${{ env.VERSION_TAG }}.apk
+
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: wenfeng-shouzhang
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: wenfeng-shouzhang-${{ env.VERSION_TAG }}
+          path: android/app/build/outputs/apk/release/wenfeng-shouzhang-${{ env.VERSION_TAG }}.apk
