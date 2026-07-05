@@ -1,6 +1,6 @@
 /* ========================================
    本地存储引擎 - localStorage 封装
-   数据结构：任务、打卡记录、金币、书签、账号
+   数据结构：任务、打卡记录、梦想币、书签、账号
    ======================================== */
 var STORAGE_KEY = "wenfeng_data";
 
@@ -36,17 +36,16 @@ function getDefaultData() {
       username: "",
       gender: "",         // "男" / "女" / ""
       age: "",            // 年龄（字符串）
+      phone: "",          // 手机号（云同步唯一标识）
       registered: false,  // 是否注册（用于区分完整账号和本地昵称）
       passwordHash: ""    // 密码哈希
     },
-    coins: 0,             // 金币总数
+    coins: 0,             // 梦想币总数
     lastCheckinDate: "",  // 上次打卡日期
     currentStreak: 0,     // 当前连续天数
-    todayCoinDate: "",    // 哪天发过金币（每天只发一次）
+    todayCoinDate: "",    // 哪天发过梦想币（每天只发一次）
     theme: "default",     // 当前主题名
     purchasedThemes: ["default"], // 已购买主题
-    soundEnabled: true,   // 打卡铃声开关
-    soundFile: "",        // 自定义铃声（base64/dataURL）
   };
 }
 
@@ -138,7 +137,7 @@ function doCheckin(tid) {
 
   task.records.push(today);
 
-  // 计算连续打卡天数与金币
+  // 计算连续打卡天数与梦想币
   var lastDate = data.lastCheckinDate;
   var yesterday = getDateStr(-1);
 
@@ -155,10 +154,10 @@ function doCheckin(tid) {
 
   data.lastCheckinDate = today;
 
-  // ★ 每天只有第一个打卡发金币
+  // ★ 每天只有第一个打卡发梦想币
   var coinsEarned = 0;
   if (data.todayCoinDate !== today) {
-    coinsEarned = data.currentStreak; // 第N天得N金币
+    coinsEarned = data.currentStreak; // 第N天得N梦想币
     data.coins += coinsEarned;
     data.todayCoinDate = today;
   }
@@ -182,14 +181,14 @@ function getCurrentStreak() {
 }
 
 /**
- * 获取总金币
+ * 获取总梦想币
  */
 function getCoins() {
   return loadData().coins;
 }
 
 /**
- * 花费金币
+ * 花费梦想币
  * @returns {boolean} 是否成功
  */
 function spendCoins(amount) {
@@ -264,16 +263,27 @@ function setAge(age) {
   saveData(data);
 }
 
+function getPhone() {
+  return loadData().account.phone || "";
+}
+
+function setPhone(phone) {
+  var data = loadData();
+  data.account.phone = phone;
+  saveData(data);
+}
+
 function isRegistered() {
   return loadData().account.registered || false;
 }
 
-function registerAccount(username, password) {
+function registerAccount(username, password, phone) {
   var data = loadData();
   if (data.account.registered) return { ok: false, msg: "账号已注册，请登录" };
   data.account.registered = true;
   data.account.username = username.trim();
   data.account.passwordHash = simpleHash(password);
+  data.account.phone = (phone || "").trim();
   saveData(data);
   return { ok: true };
 }
@@ -302,29 +312,6 @@ function simpleHash(str) {
     hash |= 0;
   }
   return "h_" + hash.toString(36);
-}
-
-/**
- * 声音设置
- */
-function getSoundEnabled() {
-  return loadData().soundEnabled;
-}
-
-function setSoundEnabled(enabled) {
-  var data = loadData();
-  data.soundEnabled = enabled;
-  saveData(data);
-}
-
-function getSoundFile() {
-  return loadData().soundFile || "";
-}
-
-function setSoundFile(base64) {
-  var data = loadData();
-  data.soundFile = base64;
-  saveData(data);
 }
 
 /**
@@ -491,4 +478,19 @@ function getLevelProgress() {
   if (nextMinDays === prevMinDays) return { current: streak, next: nextMinDays, pct: 100 };
   var pct = Math.min(100, Math.round((streak - prevMinDays) / (nextMinDays - prevMinDays) * 100));
   return { current: streak, next: nextMinDays, pct: pct };
+}
+
+/**
+ * 获取总打卡天数（所有任务去重后的日期数）
+ * 用于排行榜展示
+ */
+function getTotalCheckinDays() {
+  var tasks = getTasks();
+  var dateSet = {};
+  tasks.forEach(function(t) {
+    t.records.forEach(function(r) {
+      dateSet[r] = true;
+    });
+  });
+  return Object.keys(dateSet).length;
 }

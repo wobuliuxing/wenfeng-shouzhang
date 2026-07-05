@@ -1,5 +1,5 @@
 /* ========================================
-   我的选项卡 - 账号 / 金币 / 主题 / 铃声
+   我的选项卡 - 账号 / 梦想币 / 主题 / 铃声
    ======================================== */
 
 /**
@@ -43,9 +43,9 @@ function renderProfilePage() {
   }
   info.appendChild(levelEl);
 
-  // 鼓励语（去掉金币，只保留鼓励）
+  // 梦想币余额
   var statusEl = createEl("div", "profile-status");
-  statusEl.textContent = "你已坚持打卡" + streak + "天，继续加油哦！  |  当前一共" + coins + "金币";
+  statusEl.textContent = "当前一共 " + coins + " 梦想币";
   info.appendChild(statusEl);
   profileHeader.appendChild(info);
   header.appendChild(profileHeader);
@@ -84,7 +84,7 @@ function renderProfilePage() {
 
   // 关于
   var aboutSection = createEl("div", "profile-section");
-  var itemAbout = makeSettingItem("关于文峰手账", "v2.6.1", function() {
+  var itemAbout = makeSettingItem("关于文峰手账", "v2.7.0", function() {
     showAbout();
   });
   aboutSection.appendChild(itemAbout);
@@ -103,20 +103,6 @@ function showSettingsMenu() {
   var html = '<div class="modal-title">设置</div>';
   html += '<div class="modal-body" style="padding:0">';
 
-  // 打卡铃声
-  html += '<div class="setting-item" role="button" tabindex="0" aria-label="打卡铃声：' + (getSoundEnabled() ? "已开启" : "已关闭") + '">';
-  html += '<span class="si-label">打卡铃声</span>';
-  html += '<span class="si-value">' + (getSoundEnabled() ? "已开启" : "已关闭") + '</span>';
-  html += '<span class="si-arrow">></span>';
-  html += '</div>';
-
-  // 自定义铃声
-  html += '<div class="setting-item" role="button" tabindex="0" aria-label="自定义铃声：点击选择">';
-  html += '<span class="si-label">自定义铃声</span>';
-  html += '<span class="si-value">点击选择</span>';
-  html += '<span class="si-arrow">></span>';
-  html += '</div>';
-
   // 数据备份
   html += '<div class="setting-item" role="button" tabindex="0" aria-label="数据备份与恢复：导出/导入">';
   html += '<span class="si-label">数据备份与恢复</span>';
@@ -132,8 +118,8 @@ function showSettingsMenu() {
   html += '</div>';
 
   // 排行榜
-  html += '<div class="setting-item" role="button" tabindex="0" aria-label="金币排行榜：' + (lbOn ? "已开启" : "已关闭") + '">';
-  html += '<span class="si-label">金币排行榜</span>';
+  html += '<div class="setting-item" role="button" tabindex="0" aria-label="梦想币排行榜：' + (lbOn ? "已开启" : "已关闭") + '">';
+  html += '<span class="si-label">梦想币排行榜</span>';
   html += '<span class="si-value">' + (lbOn ? "已开启" : "已关闭") + '</span>';
   html += '<span class="si-arrow">></span>';
   html += '</div>';
@@ -160,24 +146,18 @@ function showSettingsMenu() {
       if (valEl) valEl.textContent = text;
     }
 
-    if (items.length >= 1) items[0].addEventListener("click", function() {
-      toggleSound();
-      updateItemValue(0, getSoundEnabled() ? "已开启" : "已关闭");
-    });
-    if (items.length >= 2) items[1].addEventListener("click", function() { pickCustomSound(); });
-    if (items.length >= 3) items[2].addEventListener("click", function() { showBackupMenu(); });
-    if (items.length >= 4) items[3].addEventListener("click", function() {
+    if (items.length >= 1) items[0].addEventListener("click", function() { showBackupMenu(); });
+    if (items.length >= 2) items[1].addEventListener("click", function() {
       toggleCloudSync();
-      updateItemValue(3, getCloudSyncEnabled() ? "已开启" : "已关闭");
+      updateItemValue(1, getCloudSyncEnabled() ? "已开启" : "已关闭");
     });
-    if (items.length >= 5) items[4].addEventListener("click", function() {
+    if (items.length >= 3) items[2].addEventListener("click", function() {
       toggleLeaderboard();
-      // 排行榜开关会增减"查看排行榜"项，需要重新渲染弹窗
       hideModal();
       setTimeout(function() { showSettingsMenu(); }, 80);
     });
-    if (lbOn && items.length >= 6) {
-      items[5].addEventListener("click", function() {
+    if (lbOn && items.length >= 4) {
+      items[3].addEventListener("click", function() {
         initCloudBase(function(err) {
           if (err) { showToast("云服务未就绪"); return; }
           showLeaderboard();
@@ -217,11 +197,16 @@ function makeSettingItem(label, value, onClick) {
  */
 function showLoginRegister() {
   var html = '<div class="modal-title">登录 / 注册</div>';
-  html += '<p style="font-size:12px;color:#999;margin-bottom:8px;text-align:center">首次使用请注册，之后可直接登录。注册后昵称将绑定账号。</p>';
+  html += '<p style="font-size:12px;color:#999;margin-bottom:8px;text-align:center">首次使用请注册，之后可直接登录。手机号用于跨设备数据同步。</p>';
 
   html += '<div class="form-group">';
   html += '<label class="form-label" for="lr-username">用户名</label>';
   html += '<input class="form-input" id="lr-username" type="text" placeholder="请输入用户名">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="lr-phone">手机号</label>';
+  html += '<input class="form-input" id="lr-phone" type="tel" placeholder="请输入手机号" maxlength="11">';
   html += '</div>';
 
   html += '<div class="form-group">';
@@ -243,16 +228,21 @@ function showLoginRegister() {
     if (regBtn) regBtn.addEventListener("click", function(e) {
       e.stopPropagation();
       var username = document.getElementById("lr-username").value.trim();
+      var phone = document.getElementById("lr-phone").value.trim();
       var password = document.getElementById("lr-password").value;
       if (!username || !password) { showToast("用户名和密码不能为空"); return; }
+      if (!phone) { showToast("请输入手机号"); return; }
+      if (!/^1\d{10}$/.test(phone)) { showToast("请输入正确的手机号"); return; }
       if (username.length < 2) { showToast("用户名至少2个字符"); return; }
       if (password.length < 4) { showToast("密码至少4个字符"); return; }
-      var result = registerAccount(username, password);
+      var result = registerAccount(username, password, phone);
       if (result.ok) {
         // 同时注册 CloudBase 账号（同步功能用）
         if (getCloudSyncEnabled()) {
           initCloudBase(function() {
-            cloudSignUp(username, password, function() {});
+            cloudSignUp(username, password, function() {
+              cloudUploadData(function() {});
+            });
           });
         }
         hideModal();
@@ -267,15 +257,16 @@ function showLoginRegister() {
     if (loginBtn) loginBtn.addEventListener("click", function(e) {
       e.stopPropagation();
       var username = document.getElementById("lr-username").value.trim();
+      var phone = document.getElementById("lr-phone").value.trim();
       var password = document.getElementById("lr-password").value;
       if (!username || !password) { showToast("用户名和密码不能为空"); return; }
+
       var result = loginAccount(username, password);
       if (result.ok) {
-        // 同时登录 CloudBase（同步功能用）
+        // 本地登录成功
         if (getCloudSyncEnabled()) {
           initCloudBase(function() {
             cloudSignIn(username, password, function() {
-              // 登录后检查云端数据，提示是否覆盖本地
               cloudCheckAndPrompt(function() {
                 renderProfilePage();
                 updateQuoteBar();
@@ -288,6 +279,41 @@ function showLoginRegister() {
         renderProfilePage();
         updateQuoteBar();
         showToast("欢迎回来，" + username);
+      } else if (result.msg === "尚未注册，请先注册" && phone) {
+        // 本地无账号，但用户输入了手机号 → 尝试从云端恢复
+        showToast("正在通过手机号查找云端账号...");
+        initCloudBase(function(err) {
+          if (err) { showToast("云服务连接失败"); return; }
+          cloudSignInAnonymously(function() {
+            cloudFindByPhone(phone, function(err, cloudData) {
+              if (err) { showToast("云端查找失败：" + err.message); return; }
+              if (!cloudData) {
+                showToast("该手机号未注册，请先注册");
+                return;
+              }
+              // 云端找到账号，恢复到本地
+              if (cloudData.appData) {
+                saveData(cloudData.appData);
+                // 确保手机号同步
+                setPhone(phone);
+              }
+              if (cloudData.books) localStorage.setItem("wenfeng_books", JSON.stringify(cloudData.books));
+              if (cloudData.bookProgress) localStorage.setItem("wenfeng_book_progress", cloudData.bookProgress);
+              if (cloudData.theme) {
+                setCurrentTheme(cloudData.theme.current || "default");
+                if (cloudData.theme.purchased) {
+                  localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(cloudData.theme.purchased));
+                }
+              }
+              hideModal();
+              initTheme();
+              updateQuoteBar();
+              renderProfilePage();
+              switchTab("checkin");
+              showToast("账号恢复成功！欢迎回来，" + (cloudData.username || username));
+            });
+          });
+        });
       } else {
         showToast(result.msg);
       }
@@ -302,6 +328,7 @@ function showAccountInfo() {
   var uname = getUsername();
   var gender = getGender();
   var age = getAge();
+  var phone = getPhone();
 
   var html = '<div class="modal-title">账号管理</div>';
   html += '<div class="modal-body">';
@@ -309,6 +336,11 @@ function showAccountInfo() {
   html += '<div class="form-group">';
   html += '<label class="form-label" for="ai-nickname">昵称</label>';
   html += '<input class="form-input" id="ai-nickname" type="text" placeholder="请输入昵称" value="' + uname + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ai-phone">手机号</label>';
+  html += '<input class="form-input" id="ai-phone" type="tel" placeholder="用于跨设备数据同步" value="' + phone + '" maxlength="11">';
   html += '</div>';
 
   html += '<div class="form-group">';
@@ -334,6 +366,8 @@ function showAccountInfo() {
   showModal(html, "保存", "取消", function() {
     var nick = document.getElementById("ai-nickname").value.trim();
     if (nick) setUsername(nick);
+    var p = document.getElementById("ai-phone").value.trim();
+    if (p) setPhone(p);
     var g = document.getElementById("ai-gender").value;
     setGender(g);
     var a = document.getElementById("ai-age").value;
@@ -391,7 +425,7 @@ function toggleCloudSync() {
       cloudSignInAnonymously(function() {
         cloudUploadData(function(e) {
           if (e) { showToast("同步失败：" + e.message); return; }
-          showToast("同步完成！已备份：打卡记录、金币、书架、主题");
+          showToast("同步完成！已备份：打卡记录、梦想币、书架、主题");
         });
       });
     });
@@ -416,63 +450,8 @@ function toggleLeaderboard() {
   if (on) {
     initCloudBase(function() {}); // 静默初始化
   }
-  showToast("金币排行榜已" + (on ? "开启" : "关闭"));
+  showToast("梦想币排行榜已" + (on ? "开启" : "关闭"));
   renderProfilePage();
-}
-
-function toggleSound() {
-  var enabled = getSoundEnabled();
-  setSoundEnabled(!enabled);
-  showToast("打卡铃声已" + (!enabled ? "开启" : "关闭"));
-  renderProfilePage();
-}
-
-function pickCustomSound() {
-  var input = document.createElement("input");
-  input.type = "file";
-  input.accept = "audio/*";
-  input.addEventListener("change", function(e) {
-    var file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 500 * 1024) {
-      showToast("铃声文件不能超过500KB");
-      return;
-    }
-    var reader = new FileReader();
-    reader.onload = function(evt) {
-      setSoundFile(evt.target.result);
-      showToast("自定义铃声已设置");
-    };
-    reader.readAsDataURL(file);
-  });
-  input.click();
-}
-
-function playCheckinSound() {
-  if (!getSoundEnabled()) return;
-  try {
-    var audio;
-    var soundFile = getSoundFile();
-    if (soundFile) {
-      audio = new Audio(soundFile);
-    } else {
-      // 默认使用 Web Audio API 生成简单提示音
-      var ctx = new (window.AudioContext || window.webkitAudioContext)();
-      var osc = ctx.createOscillator();
-      var gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 800;
-      osc.type = "sine";
-      gain.gain.value = 0.3;
-      osc.start();
-      osc.stop(ctx.currentTime + 0.15);
-      return;
-    }
-    audio.play().catch(function() {});
-  } catch (e) {
-    // 静默失败
-  }
 }
 
 // ══════════════════════════════════════════════
@@ -595,13 +574,13 @@ function showThemeShop() {
         html += '<button class="btn-secondary" style="padding:4px 12px;font-size:12px;min-height:28px" onclick="applyTheme(\'' + theme.id + '\')">使用</button>';
       }
     } else {
-      html += '<button class="btn-primary" style="padding:4px 12px;font-size:12px;min-height:28px" onclick="buyTheme(\'' + theme.id + '\', ' + theme.cost + ')">' + theme.cost + '金币</button>';
+      html += '<button class="btn-primary" style="padding:4px 12px;font-size:12px;min-height:28px" onclick="buyTheme(\'' + theme.id + '\', ' + theme.cost + ')">' + theme.cost + '梦想币</button>';
     }
     html += '</div>';
     html += '</div>';
   });
 
-  html += '<p style="font-size:12px;color:#999;margin-top:8px">当前金币：' + coins + '</p>';
+  html += '<p style="font-size:12px;color:#999;margin-top:8px">当前梦想币：' + coins + '</p>';
   html += '</div>';
 
   showModal(html, null, "关闭", null);
@@ -619,11 +598,11 @@ function buyTheme(themeId, cost) {
     return;
   }
   if (!purchaseTheme(themeId, cost)) {
-    showToast("金币不足，需要" + cost + "金币");
+    showToast("梦想币不足，需要" + cost + "梦想币");
     return;
   }
   applyTheme(themeId);
-  showToast("主题已购买并应用！-" + cost + "金币");
+  showToast("主题已购买并应用！-" + cost + "梦想币");
   hideModal();
   renderProfilePage();
 }
@@ -659,7 +638,7 @@ function initTheme() {
 function showBackupMenu() {
   var html = '<div class="modal-title">数据备份与恢复</div>';
   html += '<div class="modal-body">';
-  html += '<p style="margin-bottom:8px">将你的打卡记录、金币、主题、书架数据导出为文件，换手机或重装时可以导入恢复。</p>';
+  html += '<p style="margin-bottom:8px">将你的打卡记录、梦想币、主题、书架数据导出为文件，换手机或重装时可以导入恢复。</p>';
   html += '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">';
   html += '<button class="btn-primary" id="bk-export" style="min-height:44px">导出备份文件</button>';
   html += '<button class="btn-secondary" id="bk-import" style="min-height:44px">从文件导入恢复</button>';
@@ -675,31 +654,40 @@ function showBackupMenu() {
 
     var importBtn = document.getElementById("bk-import");
     if (importBtn) importBtn.addEventListener("click", function() {
-      var input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".json,application/json";
-      input.addEventListener("change", function(e) {
-        var file = e.target.files[0];
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function(evt) {
-          try {
-            var data = JSON.parse(evt.target.result);
-            importData(data);
-          } catch (err) {
-            showToast("文件格式错误，无法导入");
-          }
-        };
-        reader.readAsText(file, "UTF-8");
-      });
-      input.click();
+      // 优先使用 File System Access API
+      if (window.showOpenFilePicker) {
+        window.showOpenFilePicker({
+          types: [{
+            description: "JSON 备份文件",
+            accept: { "application/json": [".json"] }
+          }]
+        }).then(function(handles) {
+          return handles[0].getFile();
+        }).then(function(file) {
+          var reader = new FileReader();
+          reader.onload = function(evt) {
+            try {
+              var data = JSON.parse(evt.target.result);
+              importData(data);
+            } catch (err) {
+              showToast("文件格式错误，无法导入");
+            }
+          };
+          reader.readAsText(file, "UTF-8");
+        }).catch(function(err) {
+          if (err.name === "AbortError") return;
+          _fallbackImport();
+        });
+      } else {
+        _fallbackImport();
+      }
     });
   }, 50);
 }
 
 function exportData() {
   var backup = {
-    version: "2.5.0",
+    version: "2.7.0",
     exportDate: new Date().toISOString(),
     appData: loadData(),
     books: getBooks(),
@@ -715,17 +703,70 @@ function exportData() {
   };
 
   var json = JSON.stringify(backup, null, 2);
+  var fileName = "wenfeng_backup_" + getTodayStr() + ".json";
+
+  // 优先使用 File System Access API（Chrome/Edge），让用户选择保存位置
+  if (window.showSaveFilePicker) {
+    var blob = new Blob([json], { type: "application/json" });
+    window.showSaveFilePicker({
+      suggestedName: fileName,
+      types: [{
+        description: "JSON 备份文件",
+        accept: { "application/json": [".json"] }
+      }]
+    }).then(function(handle) {
+      return handle.createWritable().then(function(writable) {
+        return writable.write(blob).then(function() {
+          return writable.close();
+        });
+      });
+    }).then(function() {
+      hideModal();
+      showToast("备份文件已保存到你选择的位置");
+    }).catch(function(err) {
+      if (err.name === "AbortError") return; // 用户取消
+      // 回退到下载方式
+      _downloadBackup(json, fileName);
+    });
+  } else {
+    // 不支持 File System Access API，回退到下载
+    _downloadBackup(json, fileName);
+  }
+}
+
+function _downloadBackup(json, fileName) {
   var blob = new Blob([json], { type: "application/json" });
   var url = URL.createObjectURL(blob);
   var a = document.createElement("a");
   a.href = url;
-  a.download = "wenfeng_backup_" + getTodayStr() + ".json";
+  a.download = fileName;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   hideModal();
-  showToast("备份文件已下载");
+  showToast("备份文件已下载到下载文件夹");
+}
+
+function _fallbackImport() {
+  var input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json,application/json";
+  input.addEventListener("change", function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(evt) {
+      try {
+        var data = JSON.parse(evt.target.result);
+        importData(data);
+      } catch (err) {
+        showToast("文件格式错误，无法导入");
+      }
+    };
+    reader.readAsText(file, "UTF-8");
+  });
+  input.click();
 }
 
 function importData(backup) {
@@ -738,7 +779,7 @@ function importData(backup) {
   html += '<p>即将恢复以下数据：</p>';
   if (backup.appData.tasks) html += '<p>打卡任务：' + backup.appData.tasks.length + '个</p>';
   if (backup.books) html += '<p>书架书籍：' + backup.books.length + '本</p>';
-  if (backup.appData.coins !== undefined) html += '<p>金币：' + backup.appData.coins + '</p>';
+  if (backup.appData.coins !== undefined) html += '<p>梦想币：' + backup.appData.coins + '</p>';
   html += '<p style="color:#E64340;margin-top:8px">注意：导入将覆盖当前数据！</p>';
   html += '</div>';
 
@@ -775,7 +816,7 @@ function importData(backup) {
 function showAbout() {
   var html = '<div class="modal-title">关于文峰手账</div>';
   html += '<div class="modal-body">';
-  html += '<p>文峰手账 v2.5.0</p>';
+  html += '<p>文峰手账 v2.7.0</p>';
   html += '<p>纯文字无障碍打卡助手</p>';
   html += '<p>专为读屏优化设计</p>';
   html += '<br><p style="font-size:12px;color:#999">坚持打卡，成为更好的自己。</p>';

@@ -169,7 +169,7 @@ function generateShareCard(task) {
   var statItems = [
     { value: streak + freqUnit(task.freq), label: "连续打卡" },
     { value: total + "次", label: "累计打卡" },
-    { value: getCoins() + "", label: "金币余额" }
+    { value: getCoins() + "", label: "梦想币余额" }
   ];
 
   var statW = (cardW - 10) / 3;

@@ -5,7 +5,6 @@
 
 var currentTab = null;
 var _modalStack = [];
-var _programmaticClose = false; // 标记程序主动关闭弹窗/阅读器（非系统返回键）
 
 /**
  * 检测是否在 Capacitor APK 中运行
@@ -83,13 +82,9 @@ document.addEventListener("DOMContentLoaded", function() {
     });
   } else {
     // ── 网页模式 ──
+    // popstate 统一处理：无论是程序主动 history.back() 还是系统返回键，
+    // 都走同一条路径 pop + hide，避免"先pop再back"导致的状态不一致
     window.addEventListener("popstate", function(e) {
-      // 程序主动关闭（点按钮/Esc），不额外 pushState
-      if (_programmaticClose) {
-        _programmaticClose = false;
-        return;
-      }
-      // 系统返回键
       if (_modalStack.length > 0) {
         _modalStack.pop();
         _doHideModal();
@@ -137,7 +132,6 @@ function switchTab(tab) {
     document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
     if (!_isCapacitor()) {
-      _programmaticClose = true;
       history.back();
     }
   }
@@ -181,7 +175,6 @@ function closeReaderIfOpen() {
     document.getElementById("tab-bar").style.display = "flex";
     renderReaderPage();
     if (!_isCapacitor()) {
-      _programmaticClose = true;
       history.back();
     }
   }
@@ -247,11 +240,11 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
     history.pushState({ modal: true }, "", location.href);
   }
 
-  // 焦点放到弹窗
+  // 焦点放到弹窗（preventScroll 避免浏览器自动滚动导致跳动）
   setTimeout(function() {
     var firstFocus = box.querySelector("button, input, select, [tabindex]");
-    if (firstFocus) firstFocus.focus();
-    else { box.setAttribute("tabindex", "-1"); box.focus(); }
+    if (firstFocus) firstFocus.focus({ preventScroll: true });
+    else { box.setAttribute("tabindex", "-1"); box.focus({ preventScroll: true }); }
   }, 100);
 
   // 点击遮罩关闭
@@ -260,15 +253,21 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
   }, { once: true });
 }
 
+/**
+ * 关闭弹窗
+ * ★ 不提前 pop 栈也不直接 hide，只调 history.back()
+ *   由 popstate 统一处理 pop + hide，避免状态不一致导致跳动
+ */
 function hideModal() {
-  if (_modalStack.length > 0) {
-    _modalStack.pop();
-  }
-  _doHideModal();
-  // 网页模式消耗历史记录
-  if (!_isCapacitor()) {
-    _programmaticClose = true;
-    history.back();
+  if (_isCapacitor()) {
+    // APK 模式：无 History API，直接处理
+    if (_modalStack.length > 0) _modalStack.pop();
+    _doHideModal();
+  } else {
+    // 网页模式：只 back，popstate 会处理 pop + hide
+    if (_modalStack.length > 0) {
+      history.back();
+    }
   }
 }
 
