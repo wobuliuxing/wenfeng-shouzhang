@@ -238,6 +238,12 @@ function handleCheckin(tid) {
     }
     refreshCheckinList();
     updateQuoteBar();
+    // 云同步：本地数据变化后自动上传到云端
+    if (getCloudSyncEnabled() && isCloudLoggedIn()) {
+      cloudUploadData(function(e) {
+        if (!e) showToast("数据已自动同步到云端");
+      });
+    }
   }
 }
 

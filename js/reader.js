@@ -166,8 +166,10 @@ function openReader(book) {
   var savedPage = getBookProgress(book.id);
   currentPage = Math.min(savedPage || 1, totalPages);
 
-  // ★ push 历史记录
-  history.pushState({ reader: true }, "", location.href);
+  // ★ push 历史记录（仅网页模式）
+  if (!_isCapacitor()) {
+    history.pushState({ reader: true }, "", location.href);
+  }
 
   // 进入阅读器模式
   document.documentElement.classList.add("reader-open");
@@ -298,7 +300,7 @@ function goToPage(pageNum) {
 }
 
 /**
- * 关闭阅读器，保存书签（程序调用，需消耗 pushState）
+ * 关闭阅读器，保存书签
  */
 function closeReader() {
   if (currentBook) {
@@ -310,9 +312,11 @@ function closeReader() {
   document.documentElement.classList.remove("reader-open");
   document.getElementById("tab-bar").style.display = "flex";
   renderReaderPage();
-  // 消耗 openReader 时 push 的历史记录
-  _skipPopstate = true;
-  history.back();
+  // 网页模式消耗历史记录
+  if (!_isCapacitor()) {
+    _programmaticClose = true;
+    history.back();
+  }
 }
 
 /**

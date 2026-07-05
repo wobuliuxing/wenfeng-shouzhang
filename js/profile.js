@@ -33,12 +33,13 @@ function renderProfilePage() {
   nameEl.textContent = uname + "  你已坚持" + streak + "天";
   info.appendChild(nameEl);
 
-  // 等级徽章
+  // 等级徽章 + 进度
   var levelEl = createEl("div", "profile-level");
   levelEl.innerHTML = '<span class="level-badge">' + level.badge + ' Lv.' + level.level + '</span> <span class="level-name">' + level.name + '</span>';
   if (level.level < 9) {
     var prog = getLevelProgress();
-    levelEl.innerHTML += ' <span class="level-progress">(' + prog.pct + '%)</span>';
+    var daysLeft = prog.next - prog.current;
+    levelEl.innerHTML += '<div class="level-progress" style="margin-top:4px;font-size:12px;color:#999">你已坚持' + prog.current + '天！离下一级还剩' + daysLeft + '天，继续加油哦！</div>';
   }
   info.appendChild(levelEl);
 
@@ -274,7 +275,8 @@ function showLoginRegister() {
         if (getCloudSyncEnabled()) {
           initCloudBase(function() {
             cloudSignIn(username, password, function() {
-              cloudSync(function() {
+              // 登录后检查云端数据，提示是否覆盖本地
+              cloudCheckAndPrompt(function() {
                 renderProfilePage();
                 updateQuoteBar();
                 switchTab("checkin");
@@ -383,13 +385,13 @@ function toggleCloudSync() {
   var on = !getCloudSyncEnabled();
   setCloudSyncEnabled(on);
   if (on) {
-    showToast("多端云同步已开启，正在连接...");
+    showToast("多端云同步已开启，正在上传本地数据...");
     initCloudBase(function(err) {
       if (err) { showToast("云服务连接失败：" + err.message); return; }
       cloudSignInAnonymously(function() {
-        cloudSync(function(e, action) {
+        cloudUploadData(function(e) {
           if (e) { showToast("同步失败：" + e.message); return; }
-          showToast("同步完成！(" + action + ")");
+          showToast("同步完成！已备份：打卡记录、金币、书架、主题");
         });
       });
     });

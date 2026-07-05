@@ -3,10 +3,20 @@
    处理导航、弹窗、Toast、生命周期
    ======================================== */
 
-var currentTab = null; // 初始为 null，确保首次 switchTab("checkin") 能正常渲染
-var _modalStack = []; // 弹窗历史栈，支持层级返回
-var _skipPopstate = false; // 修复弹窗不关闭：标记跳过 popstate 处理
-var _savedScrollY = 0; // 弹窗打开前的滚动位置，用于恢复
+var currentTab = null;
+var _modalStack = [];
+var _programmaticClose = false; // 标记程序主动关闭弹窗/阅读器（非系统返回键）
+
+/**
+ * 检测是否在 Capacitor APK 中运行
+ */
+function _isCapacitor() {
+  try {
+    return typeof window.Capacitor !== "undefined" &&
+           window.Capacitor.Plugins &&
+           window.Capacitor.Plugins.App;
+  } catch(e) { return false; }
+}
 
 /** DOM Ready */
 document.addEventListener("DOMContentLoaded", function() {
@@ -17,21 +27,10 @@ document.addEventListener("DOMContentLoaded", function() {
   // 初始化 CloudBase（异步，不阻塞页面）
   initCloudBase(function(err) {
     if (err) { console.warn("CloudBase 初始化失败:", err); return; }
-    // 如果已开启云同步，尝试自动同步
-    if (getCloudSyncEnabled()) {
-      cloudSignInAnonymously(function() {
-        cloudDownloadData(function(e, data) {
-          if (!e && data && data.appData) {
-            // 云端有数据，提示用户
-            showToast("云数据已同步");
-            if (data.appData) {
-              saveData(data.appData);
-            }
-            initTheme();
-            updateQuoteBar();
-            switchTab("checkin");
-          }
-        });
+    // 如果已开启云同步且已登录，上传本地数据到云端
+    if (getCloudSyncEnabled() && isCloudLoggedIn()) {
+      cloudUploadData(function(e) {
+        if (!e) showToast("数据已同步到云端");
       });
     }
   });
@@ -40,8 +39,7 @@ document.addEventListener("DOMContentLoaded", function() {
   var tabBtns = document.querySelectorAll(".tab-btn");
   tabBtns.forEach(function(btn) {
     btn.addEventListener("click", function() {
-      var tab = this.getAttribute("data-tab");
-      switchTab(tab);
+      switchTab(this.getAttribute("data-tab"));
     });
   });
 
@@ -58,36 +56,63 @@ document.addEventListener("DOMContentLoaded", function() {
     e.preventDefault();
   }, { passive: false });
 
-  // ★ History API：按返回键时关闭弹窗或阅读器，而不是退出 app
-  window.addEventListener("popstate", function(e) {
-    // 程序关闭弹窗/阅读器时主动调了 history.back()，跳过
-    if (_skipPopstate) {
-      _skipPopstate = false;
-      return;
-    }
-    // 优先关弹窗
-    if (_modalStack.length > 0) {
-      _modalStack.pop();
-      _doHideModal();
-      return;
-    }
-    // 其次关阅读器（硬件返回键，不要调 history.back()，浏览器已弹出）
-    if (currentBook) {
-      saveBookProgress(currentBook.id, currentPage);
-      currentBook = null;
-      currentPage = 1;
-      totalPages = 1;
-      document.documentElement.classList.remove("reader-open");
-      document.getElementById("tab-bar").style.display = "flex";
-      renderReaderPage();
-      return;
-    }
-    // 都没有，阻止退出（回到首页）
+  // ★ 返回键处理：APK 用 Capacitor App 插件，网页用 History API
+  if (_isCapacitor()) {
+    // ── APK 模式 ──
+    var appPlugin = window.Capacitor.Plugins.App;
+    appPlugin.addListener("backButton", function() {
+      // 优先关弹窗
+      if (_modalStack.length > 0) {
+        _modalStack.pop();
+        _doHideModal();
+        return;
+      }
+      // 其次关阅读器
+      if (currentBook) {
+        saveBookProgress(currentBook.id, currentPage);
+        currentBook = null;
+        currentPage = 1;
+        totalPages = 1;
+        document.documentElement.classList.remove("reader-open");
+        document.getElementById("tab-bar").style.display = "flex";
+        renderReaderPage();
+        return;
+      }
+      // 都没有，退出 APP
+      appPlugin.exitApp();
+    });
+  } else {
+    // ── 网页模式 ──
+    window.addEventListener("popstate", function(e) {
+      // 程序主动关闭（点按钮/Esc），不额外 pushState
+      if (_programmaticClose) {
+        _programmaticClose = false;
+        return;
+      }
+      // 系统返回键
+      if (_modalStack.length > 0) {
+        _modalStack.pop();
+        _doHideModal();
+        history.pushState({ home: true }, "", location.href);
+        return;
+      }
+      if (currentBook) {
+        saveBookProgress(currentBook.id, currentPage);
+        currentBook = null;
+        currentPage = 1;
+        totalPages = 1;
+        document.documentElement.classList.remove("reader-open");
+        document.getElementById("tab-bar").style.display = "flex";
+        renderReaderPage();
+        history.pushState({ home: true }, "", location.href);
+        return;
+      }
+      // 都没有，留在首页
+      history.pushState({ home: true }, "", location.href);
+    });
+    // 初始 push 一个 home state
     history.pushState({ home: true }, "", location.href);
-  });
-
-  // 初始 push 一个 home state，这样第一次按返回不会退出
-  history.pushState({ home: true }, "", location.href);
+  }
 });
 
 /**
@@ -111,8 +136,10 @@ function switchTab(tab) {
     currentBook = null;
     document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
-    _skipPopstate = true;
-    history.back();
+    if (!_isCapacitor()) {
+      _programmaticClose = true;
+      history.back();
+    }
   }
 
   // 渲染对应页面
@@ -120,7 +147,7 @@ function switchTab(tab) {
     case "checkin":
       renderCheckinPage();
       break;
-case "reader":
+    case "reader":
       renderReaderPage();
       break;
     case "profile":
@@ -128,7 +155,7 @@ case "reader":
       break;
   }
 
-  // 检查 body 是否在顶部，不在则静默回到顶部
+  // 滚动到顶部
   if (window.scrollY > 10) {
     window.scrollTo({ top: 0, behavior: "instant" });
   }
@@ -142,11 +169,6 @@ function updateQuoteBar() {
   if (quoteEl) {
     quoteEl.textContent = getTodayQuote();
   }
-  var badge = document.getElementById("top-streak-badge");
-  if (badge) {
-    var streak = getCurrentStreak();
-    badge.textContent = "坚持" + streak + "天";
-  }
 }
 
 function closeReaderIfOpen() {
@@ -158,9 +180,10 @@ function closeReaderIfOpen() {
     document.documentElement.classList.remove("reader-open");
     document.getElementById("tab-bar").style.display = "flex";
     renderReaderPage();
-    // 消耗 openReader 时 push 的历史记录
-    _skipPopstate = true;
-    history.back();
+    if (!_isCapacitor()) {
+      _programmaticClose = true;
+      history.back();
+    }
   }
 }
 
@@ -170,11 +193,6 @@ function closeReaderIfOpen() {
 
 /**
  * 显示弹窗
- * @param {string} html 弹窗 HTML
- * @param {string|null} confirmText 确认按钮文字（null 则隐藏）
- * @param {string|null} cancelText 取消按钮文字（null 则隐藏）
- * @param {function|null} onConfirm 确认回调，返回 false 则阻止关闭
- * @param {function|null} onCancel 取消回调
  */
 function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
   var overlay = document.getElementById("modal-overlay");
@@ -218,21 +236,22 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
   overlay.classList.add("modal-visible");
   overlay.setAttribute("aria-hidden", "false");
 
-  // ★ 保存滚动位置，用 fixed 锁定 body 防止跳动
-  _savedScrollY = window.scrollY;
-  document.body.style.top = (-_savedScrollY) + "px";
+  // ★ 锁定滚动（overflow:hidden，不用 position:fixed 避免跳动）
   document.body.classList.add("modal-open");
 
-  // ★ push 历史记录，这样按返回键可以关闭弹窗
+  // 入栈
   _modalStack.push({ onConfirm: onConfirm, onCancel: onCancel });
-  history.pushState({ modal: true }, "", location.href);
+
+  // 网页模式 push 历史记录
+  if (!_isCapacitor()) {
+    history.pushState({ modal: true }, "", location.href);
+  }
 
   // 焦点放到弹窗
   setTimeout(function() {
     var firstFocus = box.querySelector("button, input, select, [tabindex]");
     if (firstFocus) firstFocus.focus();
-    else box.focus();
-    box.setAttribute("tabindex", "-1");
+    else { box.setAttribute("tabindex", "-1"); box.focus(); }
   }, 100);
 
   // 点击遮罩关闭
@@ -244,12 +263,13 @@ function showModal(html, confirmText, cancelText, onConfirm, onCancel) {
 function hideModal() {
   if (_modalStack.length > 0) {
     _modalStack.pop();
-    _doHideModal();
-    _skipPopstate = true;
-    history.back();
-    return;
   }
   _doHideModal();
+  // 网页模式消耗历史记录
+  if (!_isCapacitor()) {
+    _programmaticClose = true;
+    history.back();
+  }
 }
 
 function _doHideModal() {
@@ -259,9 +279,6 @@ function _doHideModal() {
   overlay.setAttribute("aria-hidden", "true");
   document.getElementById("modal-box").innerHTML = "";
   document.body.classList.remove("modal-open");
-  // ★ 恢复滚动位置，防止页面跳动
-  document.body.style.top = "";
-  window.scrollTo(0, _savedScrollY);
 }
 
 /**
