@@ -1529,7 +1529,7 @@ function _renderNoComplaintSummary(challenge, period) {
     var changePct = prevCount === 0 ? (currentCount === 0 ? 0 : 100) : Math.round((currentCount - prevCount) / prevCount * 100);
     var changeText = changePct > 0
       ? ("同比增加 " + changePct + "%，需要更多觉察哦")
-      : (changePct < 0 ? ("同比减少 " + Math.abs(changePct) + "%，太棒了！继续加油" : "与上期持平"));
+      : (changePct < 0 ? ("同比减少 " + Math.abs(changePct) + "%，太棒了！继续加油") : "与上期持平");
     html += '<p style="color:' + (changePct <= 0 ? "#07C160" : "#E64340") + ';font-weight:600">' + changeText + '</p>';
   }
   html += '</div>';
