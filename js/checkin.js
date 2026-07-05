@@ -1,5 +1,6 @@
 /* ========================================
    打卡选项卡 - 微信会话列表风格
+   v3.2: 不抱怨和一时书直接作为任务项显示
    ======================================== */
 
 /**
@@ -17,6 +18,20 @@ function renderCheckinPage() {
   btnNew.setAttribute("aria-label", "新建打卡任务");
   btnNew.addEventListener("click", showNewTaskForm);
   bar.appendChild(btnNew);
+
+  // 践行者：添加不抱怨和一时书的创建按钮
+  if (isPractitionerActivated()) {
+    var btnNC = createEl("button", "btn-secondary", { text: "+ 不抱怨" });
+    btnNC.setAttribute("aria-label", "新建不抱怨挑战");
+    btnNC.addEventListener("click", showAddNoComplaintForm);
+    bar.appendChild(btnNC);
+
+    var btnOMB = createEl("button", "btn-secondary", { text: "+ 一时书" });
+    btnOMB.setAttribute("aria-label", "新建一时书");
+    btnOMB.addEventListener("click", showAddOneMomentBookForm);
+    bar.appendChild(btnOMB);
+  }
+
   page.appendChild(bar);
 
   // 任务列表
@@ -28,7 +43,7 @@ function renderCheckinPage() {
 }
 
 /**
- * 刷新打卡任务列表
+ * 刷新打卡任务列表（含普通任务、不抱怨、一时书）
  */
 function refreshCheckinList() {
   var listDiv = document.getElementById("checkin-list");
@@ -36,22 +51,25 @@ function refreshCheckinList() {
   listDiv.innerHTML = "";
 
   var tasks = getTasks();
+  var ncChallenges = isPractitionerActivated() ? getNoComplaintChallenges() : [];
+  var ombBooks = isPractitionerActivated() ? getOneMomentBooks() : [];
+  var hasAny = tasks.length > 0 || ncChallenges.length > 0 || ombBooks.length > 0;
 
-  if (tasks.length === 0) {
+  if (!hasAny) {
     var empty = createEl("div", "empty-state");
-    empty.innerHTML = "<p>还没有打卡任务</p><p>点击上方【新建打卡任务】开始吧</p>";
+    empty.innerHTML = "<p>还没有打卡任务</p><p>点击上方按钮开始吧</p>";
     listDiv.appendChild(empty);
     return;
   }
 
-  tasks.forEach(function(task, idx) {
+  // ── 普通打卡任务 ──
+  tasks.forEach(function(task) {
     var checked = isCheckedToday(task);
     var streak = getTaskStreak(task);
     var total = getTaskTotal(task);
-    var statusIcon = checked ? "✓" : "O";
+    var statusIcon = checked ? "\u2713" : "O";
     var statusColor = checked ? "#07C160" : "#999";
 
-    // 会话列表项
     var item = createEl("div", "conversation-item");
     item.setAttribute("role", "button");
     item.setAttribute("tabindex", "0");
@@ -60,13 +78,11 @@ function refreshCheckinList() {
     ariaLabel += "，" + freqLabel(task.freq) + "，连续" + streak + freqUnit(task.freq) + "，共" + total + "次";
     item.setAttribute("aria-label", ariaLabel);
 
-    // 左侧状态图标
     var statusEl = createEl("div", "ci-status");
     statusEl.style.cssText = "color:" + statusColor + ";font-size:28px;font-weight:bold;";
     statusEl.textContent = statusIcon;
     item.appendChild(statusEl);
 
-    // 中间内容
     var body = createEl("div", "ci-body");
     var title = createEl("div", "ci-title");
     title.textContent = task.name;
@@ -92,23 +108,18 @@ function refreshCheckinList() {
     body.appendChild(sub);
     item.appendChild(body);
 
-    // 右侧标签
     var right = createEl("div", "ci-right");
-
     var tagEl = createEl("span", "ci-tag");
     if (checked) {
       tagEl.textContent = "已打卡";
       tagEl.style.color = "#07C160";
-      tagEl.setAttribute("aria-label", task.name + " 今日已打卡");
     } else {
       tagEl.textContent = "未打卡";
       tagEl.style.color = "#999";
-      tagEl.setAttribute("aria-label", task.name + " 点击打卡");
     }
     right.appendChild(tagEl);
     item.appendChild(right);
 
-    // 点击 → 打卡
     item.addEventListener("click", function() {
       if (!checked) {
         handleCheckin(task.id);
@@ -117,7 +128,6 @@ function refreshCheckinList() {
       }
     });
 
-    // 长按 → 详情（分享 + 删除）
     var longPressTimer;
     item.addEventListener("touchstart", function() {
       longPressTimer = setTimeout(function() {
@@ -129,13 +139,192 @@ function refreshCheckinList() {
 
     listDiv.appendChild(item);
   });
+
+  // ── 不抱怨挑战任务 ──
+  ncChallenges.forEach(function(ch) {
+    var todayRec = null;
+    for (var i = 0; i < ch.records.length; i++) {
+      if (ch.records[i].date === getTodayStr()) { todayRec = ch.records[i]; break; }
+    }
+    var todayCount = todayRec ? todayRec.count : 0;
+    var ncStreak = _getNoComplaintStreak(ch);
+
+    var item = createEl("div", "conversation-item nc-list-item");
+    item.setAttribute("role", "button");
+    item.setAttribute("tabindex", "0");
+    var ariaLabel = "不抱怨 " + ch.name + "，今日抱怨" + todayCount + "次";
+    if (ch.signature) ariaLabel += "，" + ch.signature;
+    ariaLabel += "，连续" + ncStreak + "天，点击记录一次抱怨，长按查看详情";
+    item.setAttribute("aria-label", ariaLabel);
+
+    var statusEl = createEl("div", "ci-status");
+    statusEl.style.cssText = "color:#E6A817;font-size:24px;";
+    statusEl.textContent = "\u{1F910}";
+    item.appendChild(statusEl);
+
+    var body = createEl("div", "ci-body");
+    var title = createEl("div", "ci-title");
+    title.textContent = ch.name;
+    if (ch.signature) {
+      title.textContent += "，" + ch.signature;
+    }
+    body.appendChild(title);
+
+    var sub = createEl("div", "ci-subtitle");
+    var countSpan = createEl("span");
+    countSpan.textContent = "今日" + todayCount + "次";
+    countSpan.style.color = todayCount > 0 ? "#E64340" : "#07C160";
+    sub.appendChild(countSpan);
+
+    var streakSpan = createEl("span");
+    streakSpan.textContent = "连续" + ncStreak + "天";
+    sub.appendChild(streakSpan);
+
+    body.appendChild(sub);
+    item.appendChild(body);
+
+    var right = createEl("div", "ci-right");
+    var tagEl = createEl("span", "ci-tag");
+    tagEl.textContent = todayCount > 0 ? todayCount + "次" : "无抱怨";
+    tagEl.style.color = todayCount > 0 ? "#E64340" : "#07C160";
+    right.appendChild(tagEl);
+    item.appendChild(right);
+
+    // 点击 → 记录一次抱怨
+    item.addEventListener("click", function() {
+      addComplaintRecord(ch.id);
+      playCheckinSound();
+      showToast("已记录一次抱怨（今日" + (todayCount + 1) + "次）");
+      refreshCheckinList();
+    });
+
+    // 长按 → 详情
+    var longPressTimer;
+    item.addEventListener("touchstart", function() {
+      longPressTimer = setTimeout(function() {
+        showNoComplaintDetail(ch.id);
+      }, 600);
+    });
+    item.addEventListener("touchend", function() { clearTimeout(longPressTimer); });
+    item.addEventListener("touchmove", function() { clearTimeout(longPressTimer); });
+
+    listDiv.appendChild(item);
+  });
+
+  // ── 一时书任务 ──
+  ombBooks.forEach(function(book) {
+    var todayRecords = book.records.filter(function(r) { return r.date === getTodayStr(); });
+    var todayCount = todayRecords.length;
+    var statusText, statusColor;
+    if (todayCount === 0) {
+      statusText = "未打卡";
+      statusColor = "#999";
+    } else if (todayCount === 1) {
+      statusText = "待咖啡冥想";
+      statusColor = "#E6A817";
+    } else {
+      statusText = "今日已完成";
+      statusColor = "#07C160";
+    }
+
+    var item = createEl("div", "conversation-item omb-list-item");
+    item.setAttribute("role", "button");
+    item.setAttribute("tabindex", "0");
+    var ariaLabel = "一时书 " + book.name;
+    if (book.prompt) ariaLabel += "，" + book.prompt;
+    if (book.signature) ariaLabel += "，" + book.signature;
+    ariaLabel += "，" + statusText + "，点击打卡，长按查看详情";
+    item.setAttribute("aria-label", ariaLabel);
+
+    var statusEl = createEl("div", "ci-status");
+    statusEl.style.cssText = "color:#7C83FD;font-size:24px;";
+    statusEl.textContent = "\u{1F4D6}";
+    item.appendChild(statusEl);
+
+    var body = createEl("div", "ci-body");
+    var title = createEl("div", "ci-title");
+    title.textContent = book.name;
+    if (book.signature) {
+      title.textContent += "，" + book.signature;
+    }
+    body.appendChild(title);
+
+    var sub = createEl("div", "ci-subtitle");
+    if (book.prompt) {
+      var promptSpan = createEl("span");
+      promptSpan.textContent = book.prompt;
+      promptSpan.style.color = "#999";
+      sub.appendChild(promptSpan);
+    }
+
+    var statusSpan = createEl("span");
+    statusSpan.textContent = statusText;
+    statusSpan.style.color = statusColor;
+    sub.appendChild(statusSpan);
+
+    body.appendChild(sub);
+    item.appendChild(body);
+
+    var right = createEl("div", "ci-right");
+    var tagEl = createEl("span", "ci-tag");
+    tagEl.textContent = statusText;
+    tagEl.style.color = statusColor;
+    right.appendChild(tagEl);
+    item.appendChild(right);
+
+    // 点击 → 打卡（六时书或咖啡冥想）
+    item.addEventListener("click", function() {
+      if (todayCount >= 2) {
+        showToast("今日一时书已完成");
+        return;
+      }
+      showOneMomentBookCheckin(book.id);
+    });
+
+    // 长按 → 详情
+    var longPressTimer;
+    item.addEventListener("touchstart", function() {
+      longPressTimer = setTimeout(function() {
+        showOneMomentBookDetail(book.id);
+      }, 600);
+    });
+    item.addEventListener("touchend", function() { clearTimeout(longPressTimer); });
+    item.addEventListener("touchmove", function() { clearTimeout(longPressTimer); });
+
+    listDiv.appendChild(item);
+  });
 }
 
 /**
- * 新建任务表单（弹窗）
+ * 计算不抱怨挑战的连续天数
+ * 从今天往前数，有记录的连续天数
+ */
+function _getNoComplaintStreak(challenge) {
+  var records = challenge.records;
+  if (!records || records.length === 0) return 0;
+
+  var dateSet = {};
+  records.forEach(function(r) { dateSet[r.date] = true; });
+
+  var streak = 0;
+  var cursor = new Date();
+  while (true) {
+    var dateStr = cursor.getFullYear() + "-" + pad(cursor.getMonth() + 1) + "-" + pad(cursor.getDate());
+    if (dateSet[dateStr]) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+/**
+ * 新建任务表单（页面）
  */
 function showNewTaskForm() {
-  var html = '<div class="modal-title">新建打卡任务</div>';
+  var html = '<div class="form-page">';
 
   html += '<div class="form-group">';
   html += '<label class="form-label" for="nf-name">任务名称（必填）</label>';
@@ -166,34 +355,16 @@ function showNewTaskForm() {
   html += '<input class="form-input" id="nf-signature" type="text" placeholder="如：坚持就是胜利">';
   html += '</div>';
 
-  showModal(html, "创建", "取消", function() {
-    var name = getVal("nf-name").trim();
-    if (!name) { showToast("任务名称不能为空"); return false; }
-    // 检查同名任务
-    var existing = getTasks();
-    for (var i = 0; i < existing.length; i++) {
-      if (existing[i].name === name) {
-        showToast("已存在同名任务「" + name + "」，请换一个名称");
-        return false;
-      }
-    }
-    var freq = getVal("nf-freq");
-    var customDay = "";
-    if (freq === "weekly" || freq === "monthly") {
-      customDay = getVal("nf-custom");
-    }
-    var note = getVal("nf-note").trim();
-    var sig = getVal("nf-signature").trim();
-    addTask(name, freq, note, customDay, sig);
-    refreshCheckinList();
-    showToast("任务「" + name + "」创建成功");
-    return true;
-  });
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="nf-create" style="flex:1;min-height:44px">创建任务</button>';
+  html += '</div>';
+  html += '</div>';
 
-  // 频率切换联动
-  var freqSel = document.getElementById("nf-freq");
-  var customGroup = document.getElementById("nf-custom-group");
-  var customSel = document.getElementById("nf-custom");
+  var page = showPage("新建打卡任务", html);
+
+  var freqSel = page.querySelector("#nf-freq");
+  var customGroup = page.querySelector("#nf-custom-group");
+  var customSel = page.querySelector("#nf-custom");
 
   function updateCustom() {
     var val = freqSel.value;
@@ -216,6 +387,29 @@ function showNewTaskForm() {
 
   freqSel.addEventListener("change", updateCustom);
   updateCustom();
+
+  page.querySelector("#nf-create").addEventListener("click", function() {
+    var name = getVal("nf-name").trim();
+    if (!name) { showToast("任务名称不能为空"); return; }
+    var existing = getTasks();
+    for (var i = 0; i < existing.length; i++) {
+      if (existing[i].name === name) {
+        showToast("已存在同名任务「" + name + "」，请换一个名称");
+        return;
+      }
+    }
+    var freq = getVal("nf-freq");
+    var customDay = "";
+    if (freq === "weekly" || freq === "monthly") {
+      customDay = getVal("nf-custom");
+    }
+    var note = getVal("nf-note").trim();
+    var sig = getVal("nf-signature").trim();
+    addTask(name, freq, note, customDay, sig);
+    refreshCheckinList();
+    showToast("任务「" + name + "」创建成功");
+    hidePage();
+  });
 }
 
 /**
@@ -228,6 +422,8 @@ function handleCheckin(tid) {
     return;
   }
   if (result.success) {
+    playCheckinSound();
+
     if (result.coinsEarned > 0) {
       showToast(
         result.taskName + " 打卡成功！+" + result.coinsEarned +
@@ -237,7 +433,14 @@ function handleCheckin(tid) {
     }
     refreshCheckinList();
     updateQuoteBar();
-    // 云同步：本地数据变化后自动上传到云端
+
+    var newDreams = checkDreamCompletion();
+    newDreams.forEach(function(dream) {
+      setTimeout(function() {
+        showToast("梦想达成！「" + dream.name + "」奖励：" + dream.reward);
+      }, 500);
+    });
+
     if (getCloudSyncEnabled() && isCloudLoggedIn()) {
       cloudUploadData(function(e) {
         if (!e) showToast("数据已自动同步到云端");
@@ -247,87 +450,87 @@ function handleCheckin(tid) {
 }
 
 /**
- * 查看任务详情（弹窗内显示记录列表）
+ * 查看任务详情（页面）
  */
 function showTaskDetail(task) {
   var checked = isCheckedToday(task);
   var streak = getTaskStreak(task);
   var total = getTaskTotal(task);
 
-  var html = '<div class="modal-title">' + task.name + '</div>';
-  html += '<div class="modal-body">';
+  var html = '<div class="detail-page">';
 
+  html += '<div class="detail-info">';
   html += '<p>频率：' + freqLabel(task.freq) + '</p>';
   html += '<p>连续打卡：' + streak + freqUnit(task.freq) + '</p>';
   html += '<p>累计打卡：' + total + '次</p>';
   if (task.note) html += '<p>备注：' + task.note + '</p>';
   if (task.signature) html += '<p>签名：「' + task.signature + '」</p>';
   html += '<p>创建于：' + (task.created || "未知") + '</p>';
-
   if (checked) {
-    html += '<p style="color:#07C160;margin-top:8px">今日已打卡 ✓</p>';
+    html += '<p style="color:#07C160;margin-top:8px">今日已打卡 \u2713</p>';
   }
+  html += '</div>';
 
-  // 打卡记录列表（默认最新3条）
   if (task.records.length > 0) {
-    html += '<hr style="margin:8px 0;border:0;border-top:1px solid #eee">';
-    html += '<p style="font-weight:600">打卡记录（共' + task.records.length + '条）：</p>';
+    html += '<div class="detail-section-title">打卡记录（共' + task.records.length + '条）</div>';
     var sorted = task.records.slice().sort().reverse();
-    var showCount = Math.min(3, sorted.length);
+    var showCount = Math.min(5, sorted.length);
     html += '<div id="detail-records-container">';
     for (var ri = 0; ri < showCount; ri++) {
-      html += '<p style="font-size:13px;margin:2px 0">✓ ' + sorted[ri] + '</p>';
+      html += '<div class="record-item">\u2713 ' + sorted[ri] + '</div>';
     }
     html += '</div>';
-    // 展开更多按钮（记录多于3条时显示）
-    if (sorted.length > 3) {
+    if (sorted.length > 5) {
       html += '<div style="text-align:center;margin-top:4px">';
       html += '<button class="btn-text-link" id="btn-expand-records" aria-label="展开更多打卡记录">展开更多记录</button>';
       html += '</div>';
     }
   }
 
-  // 操作按钮：分享 + 删除
-  html += '<div style="text-align:center;margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">';
+  html += '<div class="detail-actions">';
   html += '<button class="btn-share-card" id="btn-share-detail" aria-label="生成分享打卡卡片">分享打卡卡片</button>';
   html += '<button class="btn-danger" id="btn-delete-detail" aria-label="删除此任务">删除任务</button>';
   html += '</div>';
 
   html += '</div>';
 
-  showModal(html, null, "关闭", null, function() { hideModal(); });
+  showPage(task.name, html);
 
-  // 绑定分享和删除按钮事件
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (!topPage) return;
+  var pageEl = topPage.el;
+
   setTimeout(function() {
-    var shareBtn = document.getElementById("btn-share-detail");
+    var shareBtn = pageEl.querySelector("#btn-share-detail");
     if (shareBtn) {
       shareBtn.addEventListener("click", function(e) {
         e.stopPropagation();
         generateShareCard(task);
       });
     }
-    var delBtn = document.getElementById("btn-delete-detail");
+    var delBtn = pageEl.querySelector("#btn-delete-detail");
     if (delBtn) {
       delBtn.addEventListener("click", function(e) {
         e.stopPropagation();
-        hideModal();
-        confirmDeleteTask(task.id, task.name);
+        hidePage();
+        setTimeout(function() {
+          confirmDeleteTask(task.id, task.name);
+        }, 100);
       });
     }
-    // 展开更多记录按钮
-    var expandBtn = document.getElementById("btn-expand-records");
+    var expandBtn = pageEl.querySelector("#btn-expand-records");
     if (expandBtn) {
       expandBtn.addEventListener("click", function(e) {
         e.stopPropagation();
-        var container = document.getElementById("detail-records-container");
+        var container = pageEl.querySelector("#detail-records-container");
         if (container) {
           container.innerHTML = "";
           var sortedRecords = task.records.slice().sort().reverse();
           for (var ri = 0; ri < sortedRecords.length; ri++) {
-            var p = document.createElement("p");
-            p.style.cssText = "font-size:13px;margin:2px 0";
-            p.textContent = "✓ " + sortedRecords[ri];
-            container.appendChild(p);
+            var div = document.createElement("div");
+            div.className = "record-item";
+            div.textContent = "\u2713 " + sortedRecords[ri];
+            container.appendChild(div);
           }
         }
         expandBtn.style.display = "none";
@@ -340,21 +543,9 @@ function showTaskDetail(task) {
  * 确认删除任务
  */
 function confirmDeleteTask(tid, name) {
-  var html = '<div class="modal-title">确认删除</div>';
-  html += '<div class="modal-body">确定删除任务「' + name + '」及所有打卡记录吗？此操作不可撤销。</div>';
-
-  showModal(html, "删除", "取消", function() {
+  showConfirm("确认删除", "确定删除任务「" + name + "」及所有打卡记录吗？此操作不可撤销。", "删除", function() {
     deleteTask(tid);
     refreshCheckinList();
     showToast("任务「" + name + "」已删除");
-    return true;
-  });
-
-  setTimeout(function() {
-    var confirmBtn = document.getElementById("modal-confirm-btn");
-    if (confirmBtn) {
-      confirmBtn.classList.add("modal-btn-danger");
-      confirmBtn.textContent = "删除";
-    }
-  }, 0);
+  }, true);
 }

@@ -250,35 +250,50 @@ function cloudCheckAndPrompt(callback) {
     }
 
     var cloudDate = cloudData.updatedAt ? new Date(cloudData.updatedAt).toLocaleString("zh-CN") : "未知时间";
-    var html = '<div class="modal-title">云端数据发现</div>';
-    html += '<div class="modal-body">';
-    html += '<p>云端有一份备份数据（更新于 ' + cloudDate + '）。</p>';
-    html += '<p style="margin-top:8px;color:#666">是否用云端数据覆盖本地？</p>';
-    html += '<p style="margin-top:4px;font-size:12px;color:#999">选"否"则保留本地数据并上传到云端。</p>';
+
+    var html = '<div class="confirm-page">';
+    html += '<p class="confirm-message">云端有一份备份数据（更新于 ' + cloudDate + '）。\n\n是否用云端数据覆盖本地？\n选"保留本地"则上传当前数据到云端。</p>';
+    html += '<div class="confirm-actions">';
+    html += '<button class="btn-secondary" id="cf-keep" style="flex:1;min-height:44px">保留本地</button>';
+    html += '<button class="btn-primary" id="cf-overwrite" style="flex:1;min-height:44px">覆盖本地</button>';
+    html += '</div>';
     html += '</div>';
 
-    showModal(html, "覆盖本地", "保留本地", function() {
-      if (cloudData.appData) saveData(cloudData.appData);
-      if (cloudData.books) localStorage.setItem("wenfeng_books", JSON.stringify(cloudData.books));
-      if (cloudData.bookProgress) localStorage.setItem("wenfeng_book_progress", cloudData.bookProgress);
-      if (cloudData.theme) {
-        setCurrentTheme(cloudData.theme.current || "default");
-        if (cloudData.theme.purchased) {
-          localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(cloudData.theme.purchased));
-        }
-      }
-      initTheme();
-      updateQuoteBar();
-      switchTab("checkin");
-      showToast("已用云端数据覆盖本地");
-      if (callback) callback(null, "downloaded");
-      return true;
-    }, function() {
-      cloudUploadData(function(e) {
-        if (!e) showToast("本地数据已上传到云端");
-        if (callback) callback(e, "uploaded");
+    showPage("云端数据发现", html);
+
+    var topPage = _pageStack[_pageStack.length - 1];
+    if (!topPage) return;
+    var pageEl = topPage.el;
+
+    setTimeout(function() {
+      var keepBtn = pageEl.querySelector("#cf-keep");
+      if (keepBtn) keepBtn.addEventListener("click", function() {
+        hidePage();
+        cloudUploadData(function(e) {
+          if (!e) showToast("本地数据已上传到云端");
+          if (callback) callback(e, "uploaded");
+        });
       });
-    });
+
+      var overwriteBtn = pageEl.querySelector("#cf-overwrite");
+      if (overwriteBtn) overwriteBtn.addEventListener("click", function() {
+        if (cloudData.appData) saveData(cloudData.appData);
+        if (cloudData.books) localStorage.setItem("wenfeng_books", JSON.stringify(cloudData.books));
+        if (cloudData.bookProgress) localStorage.setItem("wenfeng_book_progress", cloudData.bookProgress);
+        if (cloudData.theme) {
+          setCurrentTheme(cloudData.theme.current || "default");
+          if (cloudData.theme.purchased) {
+            localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(cloudData.theme.purchased));
+          }
+        }
+        hidePage();
+        initTheme();
+        updateQuoteBar();
+        switchTab("checkin");
+        showToast("已用云端数据覆盖本地");
+        if (callback) callback(null, "downloaded");
+      });
+    }, 50);
   });
 }
 
@@ -390,17 +405,41 @@ function cloudFetchUserRank(callback) {
 }
 
 /**
- * 显示排行榜弹窗
+ * 显示排行榜（页面，列表格式）
  * 默认前10名，最上方显示当前用户排名
  */
 function showLeaderboard() {
-  var html = '<div class="modal-title">打卡排行榜</div>';
-  html += '<div class="modal-body" style="text-align:center">';
-  html += '<p>正在加载排行榜...</p>';
-  html += '</div>';
-  showModal(html, null, "关闭", null);
+  showPage("打卡排行榜", '<div style="text-align:center;padding:20px;color:#999">正在加载排行榜...</div>');
 
-  // 并行获取排行榜前10和用户排名
+  // 先确保云服务初始化 + 匿名登录
+  initCloudBase(function(initErr) {
+    if (initErr) {
+      _renderLeaderboardError("云服务连接失败：" + initErr.message);
+      return;
+    }
+
+    // 匿名登录
+    if (!_uid) {
+      cloudSignInAnonymously(function(loginErr) {
+        if (loginErr) {
+          _renderLeaderboardError("登录失败：" + loginErr.message);
+          return;
+        }
+        _fetchAndRenderLeaderboard();
+      });
+    } else {
+      _fetchAndRenderLeaderboard();
+    }
+  });
+}
+
+function _renderLeaderboardError(msg) {
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (topPage) topPage.el.querySelector(".page-body").innerHTML =
+    '<p style="color:#E64340;text-align:center;padding:20px">' + msg + '</p>';
+}
+
+function _fetchAndRenderLeaderboard() {
   var leaderboardData = null;
   var userRankData = null;
   var completed = 0;
@@ -409,71 +448,47 @@ function showLeaderboard() {
     completed++;
     if (completed < 2) return;
 
-    var b = document.getElementById("modal-box");
-    if (!b) return;
+    var topPage = _pageStack[_pageStack.length - 1];
+    if (!topPage) return;
+    var pageEl = topPage.el;
 
-    var html2 = '<div class="modal-title">打卡排行榜</div>';
-    html2 += '<div class="modal-body" style="padding:0">';
+    var html = '<div class="leaderboard-page">';
 
     // 顶部：当前用户排名
     if (userRankData && userRankData.data) {
-      html2 += '<div style="background:rgba(7,193,96,0.08);padding:12px 16px;text-align:center;border-bottom:2px solid var(--brand)">';
-      html2 += '<div style="font-size:13px;color:#666">我的排名</div>';
-      html2 += '<div style="font-size:24px;font-weight:700;color:var(--brand);margin:4px 0">第 ' + userRankData.rank + ' 名</div>';
-      html2 += '<div style="font-size:13px;color:#666">' + (userRankData.data.username || "我") + ' | 打卡 ' + (userRankData.data.totalDays || 0) + ' 天</div>';
-      html2 += '</div>';
+      html += '<div class="lb-my-rank">';
+      html += '<div class="lb-my-rank-label">我的排名</div>';
+      html += '<div class="lb-my-rank-num">第 ' + userRankData.rank + ' 名</div>';
+      html += '<div class="lb-my-rank-info">' + (userRankData.data.username || "我") + " | 打卡 " + (userRankData.data.totalDays || 0) + " 天</div>";
+      html += '</div>';
     } else {
-      html2 += '<div style="padding:12px 16px;text-align:center;color:#999;font-size:13px;border-bottom:1px solid #eee">';
-      html2 += '暂无你的排名数据，打卡后再来看看吧';
-      html2 += '</div>';
+      html += '<div class="lb-no-rank">暂无你的排名数据，打卡后再来看看吧</div>';
     }
 
     // 前10名列表
-    html2 += '<table style="width:100%;border-collapse:collapse;font-size:14px;text-align:left">';
-    html2 += '<tr style="border-bottom:2px solid var(--brand);background:var(--bg-secondary)">';
-    html2 += '<th style="padding:8px 12px">排名</th>';
-    html2 += '<th>昵称</th>';
-    html2 += '<th style="text-align:right;padding-right:12px">打卡天数</th>';
-    html2 += '</tr>';
-
+    html += '<div class="lb-list">';
     if (leaderboardData && leaderboardData.length > 0) {
       leaderboardData.forEach(function(entry, i) {
         var isMe = (entry.phone && getPhone() && entry.phone === getPhone()) ||
                    (entry.uid === _uid && !getPhone());
-        var bg = isMe ? "background:rgba(7,193,96,0.1)" : "";
-        var rankDisplay = (i + 1);
-        // 前三名加样式
-        var rankStyle = "";
-        if (i === 0) rankDisplay = "1";
-        else if (i === 1) rankDisplay = "2";
-        else if (i === 2) rankDisplay = "3";
-
-        html2 += '<tr style="border-bottom:1px solid #eee;' + bg + '">';
-        html2 += '<td style="padding:8px 12px;font-weight:600">' + rankDisplay + '</td>';
-        html2 += '<td>' + (entry.username || "匿名用户") + (isMe ? ' (我)' : '') + '</td>';
-        html2 += '<td style="text-align:right;padding-right:12px;color:var(--brand);font-weight:600">' + (entry.totalDays || 0) + ' 天</td>';
-        html2 += '</tr>';
+        html += '<div class="lb-item' + (isMe ? ' lb-item-me' : '') + '">';
+        html += '<span class="lb-rank">第' + (i + 1) + '名</span>';
+        html += '<span class="lb-name">' + (entry.username || "匿名用户") + (isMe ? ' (我)' : '') + '</span>';
+        html += '<span class="lb-days">' + (entry.totalDays || 0) + ' 天</span>';
+        html += '</div>';
       });
     } else {
-      html2 += '<tr><td colspan="3" style="text-align:center;padding:20px;color:#999">暂无排行榜数据</td></tr>';
+      html += '<div style="text-align:center;padding:20px;color:#999">暂无排行榜数据</div>';
     }
-    html2 += '</table>';
+    html += '</div>';
 
-    html2 += '</div>';
+    html += '</div>';
 
-    b.innerHTML = html2;
-
-    // 隐藏确认按钮
-    var confirmBtn = document.getElementById("modal-confirm-btn");
-    if (confirmBtn) confirmBtn.style.display = "none";
+    pageEl.querySelector(".page-body").innerHTML = html;
   }
 
   cloudFetchLeaderboard(10, function(err, data) {
-    if (err) {
-      var b = document.getElementById("modal-box");
-      if (b) b.querySelector(".modal-body").innerHTML = '<p style="color:#E64340">加载失败：' + err.message + '</p>';
-      return;
-    }
+    if (err) { _renderLeaderboardError("排行榜加载失败：" + err.message); return; }
     leaderboardData = data;
     renderLb();
   });

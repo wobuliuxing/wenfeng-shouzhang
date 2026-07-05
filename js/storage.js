@@ -46,6 +46,27 @@ function getDefaultData() {
     todayCoinDate: "",    // 哪天发过梦想币（每天只发一次）
     theme: "default",     // 当前主题名
     purchasedThemes: ["default"], // 已购买主题
+    // 践行者模块
+    practitioner: {
+      activated: false,   // 是否已激活
+      activationCode: "",  // 使用的激活码
+      activatedDate: "",  // 激活日期
+      avatar: "",         // 专属头像（未来可扩展）
+      icon: "default"     // 专属图标样式
+    },
+    // 不抱怨挑战
+    noComplaint: {
+      challenges: []      // { id, name, targetDays, note, signature, records: [{date, count, times: [{time, note}]}], created }
+    },
+    // 一时书
+    oneMomentBook: {
+      books: []           // { id, name, prompt, reminderTime, signature, records: [{date, type, data}], created }
+    },
+    dreams: [             // 梦想中心：坚持天数+奖励
+      { id: "dream_7", name: "坚持7天的小约定", targetDays: 7, reward: "一杯奶茶", isDefault: true, completed: false, completedDate: "" },
+      { id: "dream_21", name: "21天养成好习惯", targetDays: 21, reward: "一个可自选的主题", isDefault: true, completed: false, completedDate: "" },
+      { id: "dream_60", name: "60天给自己的礼物", targetDays: 60, reward: "一天假期", isDefault: true, completed: false, completedDate: "" }
+    ],
   };
 }
 
@@ -493,4 +514,332 @@ function getTotalCheckinDays() {
     });
   });
   return Object.keys(dateSet).length;
+}
+
+/* ========================================
+   梦想中心
+   ======================================== */
+
+/**
+ * 获取所有梦想
+ */
+function getDreams() {
+  var data = loadData();
+  if (!data.dreams) {
+    data.dreams = getDefaultData().dreams;
+    saveData(data);
+  }
+  return data.dreams;
+}
+
+/**
+ * 添加自定义梦想
+ */
+function addDream(name, targetDays, reward) {
+  var data = loadData();
+  if (!data.dreams) data.dreams = getDefaultData().dreams;
+  var dream = {
+    id: "dream_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6),
+    name: name,
+    targetDays: parseInt(targetDays),
+    reward: reward,
+    isDefault: false,
+    completed: false,
+    completedDate: ""
+  };
+  data.dreams.push(dream);
+  saveData(data);
+  return dream;
+}
+
+/**
+ * 删除梦想
+ */
+function deleteDream(id) {
+  var data = loadData();
+  if (!data.dreams) return;
+  data.dreams = data.dreams.filter(function(d) { return d.id !== id; });
+  saveData(data);
+}
+
+/**
+ * 检查梦想完成状态
+ * 基于当前连续打卡天数
+ * @returns {array} 新完成的梦想列表
+ */
+function checkDreamCompletion() {
+  var data = loadData();
+  if (!data.dreams) return [];
+  var streak = data.currentStreak || 0;
+  var newlyCompleted = [];
+
+  data.dreams.forEach(function(dream) {
+    if (!dream.completed && streak >= dream.targetDays) {
+      dream.completed = true;
+      dream.completedDate = getTodayStr();
+      newlyCompleted.push(dream);
+    }
+  });
+
+  if (newlyCompleted.length > 0) {
+    saveData(data);
+  }
+
+  return newlyCompleted;
+}
+
+/* ========================================
+   践行者模块 - 激活码系统
+   ======================================== */
+
+// 有效激活码列表（10个）
+var ACTIVATION_CODES = [
+  "WF-8X2K-9PM7",
+  "WF-N3Q5-RZAC",
+  "WF-B6C8-D2E4",
+  "WF-F7G9-H1J3",
+  "WF-K6L8-M2P5",
+  "WF-Q7R9-S3T5",
+  "WF-U4V6-W8X3",
+  "WF-Y5Z7-A1B4",
+  "WF-C6D8-E2F5",
+  "WF-G7H9-J3K6"
+];
+
+/**
+ * 获取已使用的激活码列表
+ */
+function getUsedActivationCodes() {
+  var data = loadData();
+  if (!data._usedCodes) data._usedCodes = [];
+  return data._usedCodes;
+}
+
+/**
+ * 验证并激活践行者
+ * @param {string} code - 激活码
+ * @returns {object} { success, msg }
+ */
+function activatePractitioner(code) {
+  var cleanCode = code.trim().toUpperCase();
+
+  // 检查格式
+  if (!/^WF-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(cleanCode)) {
+    return { success: false, msg: "激活码格式不正确，请检查后重试" };
+  }
+
+  // 检查是否有效码
+  var valid = false;
+  for (var i = 0; i < ACTIVATION_CODES.length; i++) {
+    if (ACTIVATION_CODES[i] === cleanCode) { valid = true; break; }
+  }
+  if (!valid) {
+    return { success: false, msg: "激活码无效，请确认后重试" };
+  }
+
+  // 检查是否已使用（本地）
+  var used = getUsedActivationCodes();
+  if (used.indexOf(cleanCode) >= 0) {
+    return { success: false, msg: "该激活码已被使用，请联系管理员" };
+  }
+
+  // 激活
+  var data = loadData();
+  if (!data._usedCodes) data._usedCodes = [];
+  data._usedCodes.push(cleanCode);
+  if (!data.practitioner) data.practitioner = { activated: false, activationCode: "", activatedDate: "", avatar: "", icon: "default" };
+  data.practitioner.activated = true;
+  data.practitioner.activationCode = cleanCode;
+  data.practitioner.activatedDate = getTodayStr();
+  saveData(data);
+
+  return { success: true, msg: "践行者模块已激活！专属主题和功能已解锁" };
+}
+
+/**
+ * 检查践行者是否已激活
+ */
+function isPractitionerActivated() {
+  var data = loadData();
+  return data.practitioner && data.practitioner.activated;
+}
+
+/* ========================================
+   不抱怨模块
+   ======================================== */
+
+/**
+ * 获取所有不抱怨挑战
+ */
+function getNoComplaintChallenges() {
+  var data = loadData();
+  if (!data.noComplaint) data.noComplaint = { challenges: [] };
+  return data.noComplaint.challenges;
+}
+
+/**
+ * 添加不抱怨挑战
+ */
+function addNoComplaintChallenge(name, targetDays, note, signature) {
+  var data = loadData();
+  if (!data.noComplaint) data.noComplaint = { challenges: [] };
+  var challenge = {
+    id: "nc_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6),
+    name: name || "不抱怨挑战",
+    targetDays: parseInt(targetDays) || 21,
+    note: note || "",
+    signature: signature || "",
+    records: [],       // { date: "2026-07-01", count: 5, times: [{ time: "09:30", note: "" }] }
+    created: getTodayStr(),
+    completed: false
+  };
+  data.noComplaint.challenges.push(challenge);
+  saveData(data);
+  return challenge;
+}
+
+/**
+ * 获取某个不抱怨挑战
+ */
+function getNoComplaintChallenge(cid) {
+  var challenges = getNoComplaintChallenges();
+  for (var i = 0; i < challenges.length; i++) {
+    if (challenges[i].id === cid) return challenges[i];
+  }
+  return null;
+}
+
+/**
+ * 添加抱怨记录（一天可多次）
+ */
+function addComplaintRecord(cid) {
+  var data = loadData();
+  if (!data.noComplaint) return null;
+  var challenge = null;
+  var cidx = -1;
+  for (var i = 0; i < data.noComplaint.challenges.length; i++) {
+    if (data.noComplaint.challenges[i].id === cid) {
+      challenge = data.noComplaint.challenges[i];
+      cidx = i;
+      break;
+    }
+  }
+  if (!challenge) return null;
+
+  var today = getTodayStr();
+  var now = new Date();
+  var timeStr = pad(now.getHours()) + ":" + pad(now.getMinutes());
+
+  // 查找今天的记录
+  var todayRecord = null;
+  for (var j = 0; j < challenge.records.length; j++) {
+    if (challenge.records[j].date === today) {
+      todayRecord = challenge.records[j];
+      break;
+    }
+  }
+
+  if (!todayRecord) {
+    todayRecord = { date: today, count: 0, times: [] };
+    challenge.records.push(todayRecord);
+  }
+
+  todayRecord.count += 1;
+  todayRecord.times.push({ time: timeStr, note: "" });
+
+  saveData(data);
+  return challenge;
+}
+
+/**
+ * 删除不抱怨挑战
+ */
+function deleteNoComplaintChallenge(cid) {
+  var data = loadData();
+  if (!data.noComplaint) return;
+  data.noComplaint.challenges = data.noComplaint.challenges.filter(function(c) { return c.id !== cid; });
+  saveData(data);
+}
+
+/* ========================================
+   一时书模块
+   ======================================== */
+
+/**
+ * 获取所有一时书
+ */
+function getOneMomentBooks() {
+  var data = loadData();
+  if (!data.oneMomentBook) data.oneMomentBook = { books: [] };
+  return data.oneMomentBook.books;
+}
+
+/**
+ * 添加一时书
+ */
+function addOneMomentBook(name, prompt, reminderTime, signature) {
+  var data = loadData();
+  if (!data.oneMomentBook) data.oneMomentBook = { books: [] };
+  var book = {
+    id: "omb_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6),
+    name: name || "我的目标",
+    prompt: prompt || "目标要具体可落地",
+    reminderTime: reminderTime || "",
+    signature: signature || "",
+    records: [],       // { date: "2026-07-01", type: "checkin|coffee", data: {...} }
+    created: getTodayStr()
+  };
+  data.oneMomentBook.books.push(book);
+  saveData(data);
+  return book;
+}
+
+/**
+ * 获取某个一时书
+ */
+function getOneMomentBook(bid) {
+  var books = getOneMomentBooks();
+  for (var i = 0; i < books.length; i++) {
+    if (books[i].id === bid) return books[i];
+  }
+  return null;
+}
+
+/**
+ * 添加一时书记录
+ * type: "checkin" = 第一次打卡（正向/负面/利他）
+ * type: "coffee" = 咖啡冥想
+ */
+function addOneMomentBookRecord(bid, type, recordData) {
+  var data = loadData();
+  if (!data.oneMomentBook) return null;
+  var book = null;
+  for (var i = 0; i < data.oneMomentBook.books.length; i++) {
+    if (data.oneMomentBook.books[i].id === bid) {
+      book = data.oneMomentBook.books[i];
+      break;
+    }
+  }
+  if (!book) return null;
+
+  var today = getTodayStr();
+  var record = {
+    date: today,
+    type: type,  // "checkin" or "coffee"
+    data: recordData,
+    created: new Date().toISOString()
+  };
+  book.records.push(record);
+  saveData(data);
+  return record;
+}
+
+/**
+ * 删除一时书
+ */
+function deleteOneMomentBook(bid) {
+  var data = loadData();
+  if (!data.oneMomentBook) return;
+  data.oneMomentBook.books = data.oneMomentBook.books.filter(function(b) { return b.id !== bid; });
+  saveData(data);
 }

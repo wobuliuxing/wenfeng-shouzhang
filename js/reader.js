@@ -314,7 +314,6 @@ function closeReader() {
   renderReaderPage();
   // 网页模式消耗历史记录
   if (!_isCapacitor()) {
-    _programmaticClose = true;
     history.back();
   }
 }
@@ -330,21 +329,11 @@ function updateReaderProgress() {
  * 确认删除书籍
  */
 function confirmDeleteBook(bid, name) {
-  var html = '<div class="modal-title">确认删除</div>';
-  html += '<div class="modal-body">确定从书架中删除「' + name + '」吗？阅读进度也会一并清除。</div>';
-  showModal(html, "删除", "取消", function() {
+  showConfirm("确认删除", "确定从书架中删除「" + name + "」吗？阅读进度也会一并清除。", "删除", function() {
     deleteBook(bid);
     refreshBookList();
     showToast("「" + name + "」已从书架移除");
-    return true;
-  });
-  setTimeout(function() {
-    var confirmBtn = document.getElementById("modal-confirm-btn");
-    if (confirmBtn) {
-      confirmBtn.classList.add("modal-btn-danger");
-      confirmBtn.textContent = "删除";
-    }
-  }, 0);
+  }, true);
 }
 
 /* ========================================
