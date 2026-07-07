@@ -1,6 +1,6 @@
 {
-  "name": "文峰手账",
-  "short_name": "文峰手账",
+  "name": "籽芽手账",
+  "short_name": "籽芽手账",
   "description": "纯文字无障碍打卡助手",
   "start_url": "./index.html",
   "display": "standalone",

@@ -1,6 +1,6 @@
 /* ========================================
    打卡选项卡 - 微信会话列表风格
-   v3.2: 不抱怨和一时书直接作为任务项显示
+   v4.1: 显示所有类型任务（普通+不抱怨+六时书）
    ======================================== */
 
 /**
@@ -19,19 +19,6 @@ function renderCheckinPage() {
   btnNew.addEventListener("click", showNewTaskForm);
   bar.appendChild(btnNew);
 
-  // 践行者：添加不抱怨和一时书的创建按钮
-  if (isPractitionerActivated()) {
-    var btnNC = createEl("button", "btn-secondary", { text: "+ 不抱怨" });
-    btnNC.setAttribute("aria-label", "新建不抱怨挑战");
-    btnNC.addEventListener("click", showAddNoComplaintForm);
-    bar.appendChild(btnNC);
-
-    var btnOMB = createEl("button", "btn-secondary", { text: "+ 一时书" });
-    btnOMB.setAttribute("aria-label", "新建一时书");
-    btnOMB.addEventListener("click", showAddOneMomentBookForm);
-    bar.appendChild(btnOMB);
-  }
-
   page.appendChild(bar);
 
   // 任务列表
@@ -43,7 +30,7 @@ function renderCheckinPage() {
 }
 
 /**
- * 刷新打卡任务列表（含普通任务、不抱怨、一时书）
+ * 刷新打卡任务列表（所有类型）
  */
 function refreshCheckinList() {
   var listDiv = document.getElementById("checkin-list");
@@ -51,9 +38,12 @@ function refreshCheckinList() {
   listDiv.innerHTML = "";
 
   var tasks = getTasks();
-  var ncChallenges = isPractitionerActivated() ? getNoComplaintChallenges() : [];
-  var ombBooks = isPractitionerActivated() ? getOneMomentBooks() : [];
-  var hasAny = tasks.length > 0 || ncChallenges.length > 0 || ombBooks.length > 0;
+  var isPrac = isPractitionerActivated();
+  var ncChallenges = isPrac ? getNoComplaintChallenges() : [];
+  var oneBooks = isPrac ? getMomentBooks("one") : [];
+  var threeBooks = isPrac ? getMomentBooks("three") : [];
+  var sixBooks = isPrac ? getMomentBooks("six") : [];
+  var hasAny = tasks.length > 0 || ncChallenges.length > 0 || oneBooks.length > 0 || threeBooks.length > 0 || sixBooks.length > 0;
 
   if (!hasAny) {
     var empty = createEl("div", "empty-state");
@@ -67,7 +57,8 @@ function refreshCheckinList() {
     var checked = isCheckedToday(task);
     var streak = getTaskStreak(task);
     var total = getTaskTotal(task);
-    var statusIcon = checked ? "\u2713" : "O";
+    var themeIcon = (typeof getTaskTypeIcon === "function") ? getTaskTypeIcon("task") : "";
+    var statusIcon = (checked ? "\u2713" : "\u25CB") + (themeIcon ? " " + themeIcon : "");
     var statusColor = checked ? "#07C160" : "#999";
 
     var item = createEl("div", "conversation-item");
@@ -141,112 +132,121 @@ function refreshCheckinList() {
   });
 
   // ── 不抱怨挑战任务 ──
-  ncChallenges.forEach(function(ch) {
-    var todayRec = null;
-    for (var i = 0; i < ch.records.length; i++) {
-      if (ch.records[i].date === getTodayStr()) { todayRec = ch.records[i]; break; }
-    }
-    var todayCount = todayRec ? todayRec.count : 0;
-    var ncStreak = _getNoComplaintStreak(ch);
+  if (isPrac) {
+    ncChallenges.forEach(function(ch) {
+      var todayRec = null;
+      for (var i = 0; i < ch.records.length; i++) {
+        if (ch.records[i].date === getTodayStr()) { todayRec = ch.records[i]; break; }
+      }
+      var todayCount = todayRec ? todayRec.count : 0;
+      var ncStreak = _getNoComplaintStreak(ch);
 
-    var item = createEl("div", "conversation-item nc-list-item");
-    item.setAttribute("role", "button");
-    item.setAttribute("tabindex", "0");
-    var ariaLabel = "不抱怨 " + ch.name + "，今日抱怨" + todayCount + "次";
-    if (ch.signature) ariaLabel += "，" + ch.signature;
-    ariaLabel += "，连续" + ncStreak + "天，点击记录一次抱怨，长按查看详情";
-    item.setAttribute("aria-label", ariaLabel);
+      var item = createEl("div", "conversation-item nc-list-item");
+      item.setAttribute("role", "button");
+      item.setAttribute("tabindex", "0");
+      var ariaLabel = "不抱怨 " + ch.name + "，今日抱怨" + todayCount + "次";
+      if (ch.signature) ariaLabel += "，" + ch.signature;
+      ariaLabel += "，连续" + ncStreak + "天，点击记录一次抱怨，长按查看详情";
+      item.setAttribute("aria-label", ariaLabel);
 
-    var statusEl = createEl("div", "ci-status");
-    statusEl.style.cssText = "color:#E6A817;font-size:24px;";
-    statusEl.textContent = "\u{1F910}";
-    item.appendChild(statusEl);
+      var statusEl = createEl("div", "ci-status");
+      statusEl.style.cssText = "color:#E6A817;font-size:24px;";
+      statusEl.textContent = (typeof getTaskTypeIcon === "function") ? getTaskTypeIcon("nocomplaint") : "\u{1F910}";
+      item.appendChild(statusEl);
 
-    var body = createEl("div", "ci-body");
-    var title = createEl("div", "ci-title");
-    title.textContent = ch.name;
-    if (ch.signature) {
-      title.textContent += "，" + ch.signature;
-    }
-    body.appendChild(title);
+      var body = createEl("div", "ci-body");
+      var title = createEl("div", "ci-title");
+      title.textContent = ch.name;
+      if (ch.signature) title.textContent += "，" + ch.signature;
+      body.appendChild(title);
 
-    var sub = createEl("div", "ci-subtitle");
-    var countSpan = createEl("span");
-    countSpan.textContent = "今日" + todayCount + "次";
-    countSpan.style.color = todayCount > 0 ? "#E64340" : "#07C160";
-    sub.appendChild(countSpan);
+      var sub = createEl("div", "ci-subtitle");
+      var countSpan = createEl("span");
+      countSpan.textContent = "今日" + todayCount + "次";
+      countSpan.style.color = todayCount > 0 ? "#E64340" : "#07C160";
+      sub.appendChild(countSpan);
 
-    var streakSpan = createEl("span");
-    streakSpan.textContent = "连续" + ncStreak + "天";
-    sub.appendChild(streakSpan);
+      var streakSpan = createEl("span");
+      streakSpan.textContent = "连续" + ncStreak + "天";
+      sub.appendChild(streakSpan);
+      body.appendChild(sub);
+      item.appendChild(body);
 
-    body.appendChild(sub);
-    item.appendChild(body);
+      var right = createEl("div", "ci-right");
+      var tagEl = createEl("span", "ci-tag");
+      tagEl.textContent = todayCount > 0 ? todayCount + "次" : "无抱怨";
+      tagEl.style.color = todayCount > 0 ? "#E64340" : "#07C160";
+      right.appendChild(tagEl);
+      item.appendChild(right);
 
-    var right = createEl("div", "ci-right");
-    var tagEl = createEl("span", "ci-tag");
-    tagEl.textContent = todayCount > 0 ? todayCount + "次" : "无抱怨";
-    tagEl.style.color = todayCount > 0 ? "#E64340" : "#07C160";
-    right.appendChild(tagEl);
-    item.appendChild(right);
+      item.addEventListener("click", function() {
+        addComplaintRecord(ch.id);
+        playCheckinSound();
+        showToast("已记录一次抱怨（今日" + (todayCount + 1) + "次）");
+        refreshCheckinList();
+      });
 
-    // 点击 → 记录一次抱怨
-    item.addEventListener("click", function() {
-      addComplaintRecord(ch.id);
-      playCheckinSound();
-      showToast("已记录一次抱怨（今日" + (todayCount + 1) + "次）");
-      refreshCheckinList();
+      var longPressTimer;
+      item.addEventListener("touchstart", function() {
+        longPressTimer = setTimeout(function() {
+          showNoComplaintDetail(ch.id);
+        }, 600);
+      });
+      item.addEventListener("touchend", function() { clearTimeout(longPressTimer); });
+      item.addEventListener("touchmove", function() { clearTimeout(longPressTimer); });
+
+      listDiv.appendChild(item);
     });
 
-    // 长按 → 详情
-    var longPressTimer;
-    item.addEventListener("touchstart", function() {
-      longPressTimer = setTimeout(function() {
-        showNoComplaintDetail(ch.id);
-      }, 600);
-    });
-    item.addEventListener("touchend", function() { clearTimeout(longPressTimer); });
-    item.addEventListener("touchmove", function() { clearTimeout(longPressTimer); });
+    // ── 一时书/三时书/六时书 ──
+    _renderMomentBookListItems(listDiv, "one", oneBooks);
+    _renderMomentBookListItems(listDiv, "three", threeBooks);
+    _renderMomentBookListItems(listDiv, "six", sixBooks);
+  }
+}
 
-    listDiv.appendChild(item);
-  });
+/**
+ * 渲染时刻书在打卡列表中的项
+ */
+function _renderMomentBookListItems(listDiv, type, books) {
+  var config = MOMENT_BOOK_CONFIG[type];
+  var iconMap = { one: "\u{1F4D6}", three: "\u{1F4DD}", six: "\u{1F4D8}" };
+  var colorMap = { one: "#7C83FD", three: "#E67E22", six: "#8E44AD" };
 
-  // ── 一时书任务 ──
-  ombBooks.forEach(function(book) {
+  books.forEach(function(book) {
     var todayRecords = book.records.filter(function(r) { return r.date === getTodayStr(); });
     var todayCount = todayRecords.length;
+    var maxPerDay = config.maxPerDay;
     var statusText, statusColor;
+
     if (todayCount === 0) {
       statusText = "未打卡";
       statusColor = "#999";
-    } else if (todayCount === 1) {
-      statusText = "待咖啡冥想";
+    } else if (todayCount < maxPerDay) {
+      statusText = todayCount + "/" + maxPerDay;
       statusColor = "#E6A817";
     } else {
       statusText = "今日已完成";
       statusColor = "#07C160";
     }
 
-    var item = createEl("div", "conversation-item omb-list-item");
+    var item = createEl("div", "conversation-item");
     item.setAttribute("role", "button");
     item.setAttribute("tabindex", "0");
-    var ariaLabel = "一时书 " + book.name;
-    if (book.prompt) ariaLabel += "，" + book.prompt;
+    var ariaLabel = config.name + " " + book.name;
     if (book.signature) ariaLabel += "，" + book.signature;
     ariaLabel += "，" + statusText + "，点击打卡，长按查看详情";
     item.setAttribute("aria-label", ariaLabel);
 
     var statusEl = createEl("div", "ci-status");
-    statusEl.style.cssText = "color:#7C83FD;font-size:24px;";
-    statusEl.textContent = "\u{1F4D6}";
+    statusEl.style.cssText = "color:" + colorMap[type] + ";font-size:24px;";
+    statusEl.textContent = (typeof getTaskTypeIcon === "function") ? getTaskTypeIcon(type) : iconMap[type];
     item.appendChild(statusEl);
 
     var body = createEl("div", "ci-body");
     var title = createEl("div", "ci-title");
-    title.textContent = book.name;
-    if (book.signature) {
-      title.textContent += "，" + book.signature;
-    }
+    title.textContent = config.name + "：" + book.name;
+    if (book.signature) title.textContent += "，" + book.signature;
     body.appendChild(title);
 
     var sub = createEl("div", "ci-subtitle");
@@ -256,12 +256,10 @@ function refreshCheckinList() {
       promptSpan.style.color = "#999";
       sub.appendChild(promptSpan);
     }
-
     var statusSpan = createEl("span");
     statusSpan.textContent = statusText;
     statusSpan.style.color = statusColor;
     sub.appendChild(statusSpan);
-
     body.appendChild(sub);
     item.appendChild(body);
 
@@ -272,21 +270,17 @@ function refreshCheckinList() {
     right.appendChild(tagEl);
     item.appendChild(right);
 
-    // 点击 → 打卡（六时书或咖啡冥想）
     item.addEventListener("click", function() {
-      if (todayCount >= 2) {
-        showToast("今日一时书已完成");
+      if (todayCount >= maxPerDay) {
+        showToast("今日" + config.name + "已完成");
         return;
       }
-      showOneMomentBookCheckin(book.id);
+      showMomentBookCheckin(type, book.id);
     });
 
-    // 长按 → 详情
     var longPressTimer;
     item.addEventListener("touchstart", function() {
-      longPressTimer = setTimeout(function() {
-        showOneMomentBookDetail(book.id);
-      }, 600);
+      longPressTimer = setTimeout(function() { showMomentBookDetail(type, book.id); }, 600);
     });
     item.addEventListener("touchend", function() { clearTimeout(longPressTimer); });
     item.addEventListener("touchmove", function() { clearTimeout(longPressTimer); });
@@ -488,6 +482,7 @@ function showTaskDetail(task) {
   }
 
   html += '<div class="detail-actions">';
+  html += '<button class="btn-secondary" id="btn-edit-detail" style="min-height:40px" aria-label="编辑此任务">编辑任务</button>';
   html += '<button class="btn-share-card" id="btn-share-detail" aria-label="生成分享打卡卡片">分享打卡卡片</button>';
   html += '<button class="btn-danger" id="btn-delete-detail" aria-label="删除此任务">删除任务</button>';
   html += '</div>';
@@ -501,6 +496,14 @@ function showTaskDetail(task) {
   var pageEl = topPage.el;
 
   setTimeout(function() {
+    var editBtn = pageEl.querySelector("#btn-edit-detail");
+    if (editBtn) {
+      editBtn.addEventListener("click", function(e) {
+        e.stopPropagation();
+        hidePage();
+        setTimeout(function() { showEditTaskForm(task); }, 100);
+      });
+    }
     var shareBtn = pageEl.querySelector("#btn-share-detail");
     if (shareBtn) {
       shareBtn.addEventListener("click", function(e) {
@@ -548,4 +551,57 @@ function confirmDeleteTask(tid, name) {
     refreshCheckinList();
     showToast("任务「" + name + "」已删除");
   }, true);
+}
+
+/**
+ * 编辑任务表单（页面）
+ */
+function showEditTaskForm(task) {
+  var html = '<div class="form-page">';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ef-name">任务名称（必填）</label>';
+  html += '<input class="form-input" id="ef-name" type="text" value="' + task.name + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ef-freq">打卡频率</label>';
+  html += '<select class="form-select" id="ef-freq">';
+  html += '<option value="daily"' + (task.freq === "daily" ? " selected" : "") + '>每天</option>';
+  html += '<option value="weekly"' + (task.freq === "weekly" ? " selected" : "") + '>每周</option>';
+  html += '<option value="monthly"' + (task.freq === "monthly" ? " selected" : "") + '>每月</option>';
+  html += '</select>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ef-note">备注（可选）</label>';
+  html += '<input class="form-input" id="ef-note" type="text" value="' + (task.note || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ef-signature">自定义签名（可选）</label>';
+  html += '<input class="form-input" id="ef-signature" type="text" value="' + (task.signature || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="ef-save" style="flex:1;min-height:44px">保存修改</button>';
+  html += '</div>';
+  html += '</div>';
+
+  var page = showPage("编辑任务", html);
+
+  setTimeout(function() {
+    var saveBtn = page.querySelector("#ef-save");
+    if (saveBtn) saveBtn.addEventListener("click", function() {
+      var name = getVal("ef-name").trim();
+      if (!name) { showToast("任务名称不能为空"); return; }
+      var freq = getVal("ef-freq");
+      var note = getVal("ef-note").trim();
+      var sig = getVal("ef-signature").trim();
+      updateTask(task.id, name, freq, note, task.customDay, sig);
+      refreshCheckinList();
+      showToast("任务已更新");
+      hidePage();
+    });
+  }, 50);
 }

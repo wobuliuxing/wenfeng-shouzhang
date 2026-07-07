@@ -42,15 +42,29 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: 创建签名密钥
+      # ★ 签名密钥：优先使用 GitHub Secret 中存储的固定密钥
+      # 如果没有 Secret，则生成一个并上传为 artifact（仅首次需要）
+      - name: 准备签名密钥
         run: |
-          keytool -genkey -v \
-            -keystore android/wenfeng.keystore \
-            -alias wenfeng \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass wenfeng123 \
-            -keypass wenfeng123 \
-            -dname "CN=Wenfeng, OU=App, O=Wenfeng, L=Beijing, ST=Beijing, C=CN"
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "使用 GitHub Secret 中的固定签名密钥"
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/wenfeng.keystore
+          else
+            echo "首次构建：生成新的签名密钥（请保存为 GitHub Secret: KEYSTORE_BASE64）"
+            keytool -genkey -v \
+              -keystore android/wenfeng.keystore \
+              -alias wenfeng \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass wenfeng123 \
+              -keypass wenfeng123 \
+              -dname "CN=Wenfeng, OU=App, O=Wenfeng, L=Beijing, ST=Beijing, C=CN"
+            # 上传密钥的 base64 编码，方便用户保存为 Secret
+            KEYSTORE_B64=$(base64 -w 0 android/wenfeng.keystore)
+            echo "KEYSTORE_BASE64=$KEYSTORE_B64" > keystore_info.txt
+            echo "===== 重要：请将以下内容保存为 GitHub Secret (KEYSTORE_BASE64) ====="
+            echo "$KEYSTORE_B64"
+            echo "==================================================================="
+          fi
 
       - name: 生成 Gradle 签名配置
         run: |
@@ -78,7 +92,7 @@ jobs:
 
       - name: 生成版本号
         run: |
-          VERSION="v2.8.0-$(date +%Y%m%d)"
+          VERSION="v4.1.2-$(date +%Y%m%d)"
           echo "VERSION_TAG=$VERSION" >> $GITHUB_ENV
           echo "版本号: $VERSION"
 
@@ -90,10 +104,18 @@ jobs:
       - name: 重命名 APK
         run: |
           mv android/app/build/outputs/apk/release/app-release.apk \
-             android/app/build/outputs/apk/release/wenfeng-shouzhang-${{ env.VERSION_TAG }}.apk
+             android/app/build/outputs/apk/release/ziya-shouzhang-${{ env.VERSION_TAG }}.apk
 
       - name: 上传 APK
         uses: actions/upload-artifact@v4
         with:
-          name: wenfeng-shouzhang-${{ env.VERSION_TAG }}
-          path: android/app/build/outputs/apk/release/wenfeng-shouzhang-${{ env.VERSION_TAG }}.apk
+          name: ziya-shouzhang-${{ env.VERSION_TAG }}
+          path: android/app/build/outputs/apk/release/ziya-shouzhang-${{ env.VERSION_TAG }}.apk
+
+      # 首次构建时上传密钥信息（如果 Secret 不存在）
+      - name: 上传密钥信息（仅首次）
+        if: ${{ !secrets.KEYSTORE_BASE64 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: keystore-info
+          path: keystore_info.txt

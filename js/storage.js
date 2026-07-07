@@ -62,6 +62,18 @@ function getDefaultData() {
     oneMomentBook: {
       books: []           // { id, name, prompt, reminderTime, signature, records: [{date, type, data}], created }
     },
+    // 三时书（比一时书多1次打卡，共3次/天）
+    threeMomentBook: {
+      books: []
+    },
+    // 六时书（比一时书多5次打卡，共7次/天）
+    sixMomentBook: {
+      books: []
+    },
+    // 阳光雨露（连续3天打卡激活）
+    sunshine: {
+      entries: []  // { id, name, content, action, records: ["2026-07-01",...], created }
+    },
     dreams: [             // 梦想中心：坚持天数+奖励
       { id: "dream_7", name: "坚持7天的小约定", targetDays: 7, reward: "一杯奶茶", isDefault: true, completed: false, completedDate: "" },
       { id: "dream_21", name: "21天养成好习惯", targetDays: 21, reward: "一个可自选的主题", isDefault: true, completed: false, completedDate: "" },
@@ -114,6 +126,24 @@ function addTask(name, freq, note, customDay, signature) {
 function deleteTask(tid) {
   var data = loadData();
   data.tasks = data.tasks.filter(function(t) { return t.id !== tid; });
+  saveData(data);
+}
+
+/**
+ * 更新任务（编辑）
+ */
+function updateTask(tid, name, freq, note, customDay, signature) {
+  var data = loadData();
+  for (var i = 0; i < data.tasks.length; i++) {
+    if (data.tasks[i].id === tid) {
+      data.tasks[i].name = name;
+      data.tasks[i].freq = freq || "daily";
+      data.tasks[i].note = note || "";
+      data.tasks[i].customDay = customDay || "";
+      data.tasks[i].signature = signature || "";
+      break;
+    }
+  }
   saveData(data);
 }
 
@@ -843,3 +873,278 @@ function deleteOneMomentBook(bid) {
   data.oneMomentBook.books = data.oneMomentBook.books.filter(function(b) { return b.id !== bid; });
   saveData(data);
 }
+
+/* ========================================
+   通用时刻书模块（三时书、六时书）
+   type: "three" = 三时书(3次/天), "six" = 六时书(7次/天)
+   ======================================== */
+
+var MOMENT_BOOK_CONFIG = {
+  one:   { maxPerDay: 2, name: "一时书", checkinName: "六时书" },
+  three: { maxPerDay: 3, name: "三时书", checkinName: "六时书" },
+  six:   { maxPerDay: 7, name: "六时书", checkinName: "六时书" }
+};
+
+function _getMomentBookKey(type) {
+  if (type === "three") return "threeMomentBook";
+  if (type === "six") return "sixMomentBook";
+  return "oneMomentBook";
+}
+
+function getMomentBooks(type) {
+  var data = loadData();
+  var key = _getMomentBookKey(type);
+  if (!data[key]) data[key] = { books: [] };
+  return data[key].books;
+}
+
+function addMomentBook(type, name, prompt, reminderTime, signature) {
+  var data = loadData();
+  var key = _getMomentBookKey(type);
+  if (!data[key]) data[key] = { books: [] };
+  var prefix = type === "three" ? "tmb_" : (type === "six" ? "smb_" : "omb_");
+  var book = {
+    id: prefix + Date.now() + "_" + Math.random().toString(36).substr(2, 6),
+    name: name || "我的目标",
+    prompt: prompt || "",
+    reminderTime: reminderTime || "",
+    signature: signature || "",
+    records: [],
+    created: getTodayStr()
+  };
+  data[key].books.push(book);
+  saveData(data);
+  return book;
+}
+
+function getMomentBook(type, bid) {
+  var books = getMomentBooks(type);
+  for (var i = 0; i < books.length; i++) {
+    if (books[i].id === bid) return books[i];
+  }
+  return null;
+}
+
+function addMomentBookRecord(type, bid, recordType, recordData) {
+  var data = loadData();
+  var key = _getMomentBookKey(type);
+  if (!data[key]) return null;
+  var book = null;
+  for (var i = 0; i < data[key].books.length; i++) {
+    if (data[key].books[i].id === bid) {
+      book = data[key].books[i];
+      break;
+    }
+  }
+  if (!book) return null;
+
+  var today = getTodayStr();
+  var record = {
+    date: today,
+    type: recordType,
+    data: recordData,
+    created: new Date().toISOString()
+  };
+  book.records.push(record);
+  saveData(data);
+  return record;
+}
+
+function deleteMomentBook(type, bid) {
+  var data = loadData();
+  var key = _getMomentBookKey(type);
+  if (!data[key]) return;
+  data[key].books = data[key].books.filter(function(b) { return b.id !== bid; });
+  saveData(data);
+}
+
+/* ========================================
+   连续打卡跟踪（践行者）
+   ======================================== */
+
+var STREAK_TARGETS = {
+  dream:    { name: "梦想打卡", targetDays: 7,   desc: "连续打卡7天" },
+  nocomplain: { name: "不抱怨", targetDays: 21,  desc: "连续21天不抱怨" },
+  one:      { name: "一时书", targetDays: 30,  desc: "连续30天记录一时书" },
+  three:    { name: "三时书", targetDays: 90,  desc: "连续90天记录三时书" },
+  six:      { name: "六时书", targetDays: 180, desc: "连续180天记录六时书" }
+};
+
+function getPractitionerStreaks() {
+  var data = loadData();
+  if (!data.practitioner) data.practitioner = {};
+  if (!data.practitioner.streaks) data.practitioner.streaks = {};
+  return data.practitioner.streaks;
+}
+
+function setPractitionerStreak(key, enabled) {
+  var data = loadData();
+  if (!data.practitioner) data.practitioner = { activated: false };
+  if (!data.practitioner.streaks) data.practitioner.streaks = {};
+  data.practitioner.streaks[key] = { enabled: enabled, startDate: enabled ? getTodayStr() : "" };
+  saveData(data);
+}
+
+function isStreakEnabled(key) {
+  var streaks = getPractitionerStreaks();
+  return streaks[key] && streaks[key].enabled;
+}
+
+/* ========================================
+   阳光雨露模块
+   ======================================== */
+
+function getSunshineEntries() {
+  var data = loadData();
+  if (!data.sunshine) data.sunshine = { entries: [] };
+  return data.sunshine.entries;
+}
+
+function addSunshineEntry(name, content, action) {
+  var data = loadData();
+  if (!data.sunshine) data.sunshine = { entries: [] };
+  var entry = {
+    id: "sun_" + Date.now() + "_" + Math.random().toString(36).substr(2, 6),
+    name: name || "阳光雨露",
+    content: content || "",
+    action: action || "",
+    records: [],
+    created: getTodayStr()
+  };
+  data.sunshine.entries.push(entry);
+  saveData(data);
+  return entry;
+}
+
+function getSunshineEntry(eid) {
+  var entries = getSunshineEntries();
+  for (var i = 0; i < entries.length; i++) {
+    if (entries[i].id === eid) return entries[i];
+  }
+  return null;
+}
+
+function addSunshineRecord(eid) {
+  var data = loadData();
+  if (!data.sunshine) return null;
+  for (var i = 0; i < data.sunshine.entries.length; i++) {
+    if (data.sunshine.entries[i].id === eid) {
+      var today = getTodayStr();
+      if (data.sunshine.entries[i].records.indexOf(today) >= 0) return data.sunshine.entries[i];
+      data.sunshine.entries[i].records.push(today);
+      saveData(data);
+      return data.sunshine.entries[i];
+    }
+  }
+  return null;
+}
+
+function deleteSunshineEntry(eid) {
+  var data = loadData();
+  if (!data.sunshine) return;
+  data.sunshine.entries = data.sunshine.entries.filter(function(e) { return e.id !== eid; });
+  saveData(data);
+}
+
+/* ========================================
+   模块激活机制（连续打卡达标自动激活）
+   有激活码则一次性全部激活
+   ======================================== */
+
+var ACTIVATION_TARGETS = {
+  dream:     { name: "梦想中心", targetDays: 7,   desc: "连续打卡7天激活" },
+  nocomplain:{ name: "不抱怨", targetDays: 21,  desc: "连续21天记录激活" },
+  one:       { name: "一时书", targetDays: 30,  desc: "连续30天记录激活" },
+  three:     { name: "三时书", targetDays: 90,  desc: "连续90天记录激活" },
+  six:       { name: "六时书", targetDays: 180, desc: "连续180天记录激活" },
+  sunshine:  { name: "阳光雨露", targetDays: 3,  desc: "连续3天记录激活" }
+};
+
+/**
+ * 检查某个模块是否已激活
+ * 有激活码 = 全部激活
+ * 无激活码 = 检查连续打卡天数是否达标
+ */
+function isModuleActivated(key) {
+  // 践行者已激活（有激活码），则全部模块激活
+  if (isPractitionerActivated()) return true;
+
+  var target = ACTIVATION_TARGETS[key];
+  if (!target) return false;
+
+  var streak = _getModuleStreak(key);
+  return streak >= target.targetDays;
+}
+
+/**
+ * 获取某模块的连续打卡天数
+ */
+function _getModuleStreak(key) {
+  if (key === "dream") {
+    return getCurrentStreak();
+  }
+  if (key === "nocomplain") {
+    var ncChallenges = getNoComplaintChallenges();
+    if (ncChallenges.length === 0) return 0;
+    return _getNoComplaintStreakGlobal(ncChallenges);
+  }
+  if (key === "one" || key === "three" || key === "six") {
+    var books = getMomentBooks(key);
+    if (books.length === 0) return 0;
+    return _getMomentBookStreakGlobal(books);
+  }
+  if (key === "sunshine") {
+    var entries = getSunshineEntries();
+    if (entries.length === 0) return 0;
+    return _getSunshineStreakGlobal(entries);
+  }
+  return 0;
+}
+
+function _getNoComplaintStreakGlobal(challenges) {
+  var dateSet = {};
+  challenges.forEach(function(ch) {
+    ch.records.forEach(function(r) { dateSet[r.date] = true; });
+  });
+  return _calcStreakFromDates(dateSet);
+}
+
+function _getMomentBookStreakGlobal(books) {
+  var dateSet = {};
+  books.forEach(function(book) {
+    book.records.forEach(function(r) { dateSet[r.date] = true; });
+  });
+  return _calcStreakFromDates(dateSet);
+}
+
+function _getSunshineStreakGlobal(entries) {
+  var dateSet = {};
+  entries.forEach(function(e) {
+    e.records.forEach(function(r) { dateSet[r] = true; });
+  });
+  return _calcStreakFromDates(dateSet);
+}
+
+function _calcStreakFromDates(dateSet) {
+  var streak = 0;
+  var cursor = new Date();
+  while (true) {
+    var dateStr = cursor.getFullYear() + "-" + pad(cursor.getMonth() + 1) + "-" + pad(cursor.getDate());
+    if (dateSet[dateStr]) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+/**
+ * 各模块的激活进度查询（返回当前连续天数，供"待激活 还需X天"显示）
+ */
+function getDreamCenterActivationProgress() { return _getModuleStreak("dream"); }
+function getNoComplaintActivationProgress() { return _getModuleStreak("nocomplain"); }
+function getMomentBookActivationProgress(type) { return _getModuleStreak(type || "one"); }
+function getSunshineActivationProgress() { return _getModuleStreak("sunshine"); }
+

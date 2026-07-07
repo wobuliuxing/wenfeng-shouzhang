@@ -1,6 +1,6 @@
 /* ========================================
-   我的选项卡 - 账号 / 梦想币 / 梦想中心 / 主题
-   v3.0: 弹窗改为页面导航 + 新增梦想中心
+   我的选项卡 - 账号 / 梦想币 / 主题
+   v4.0: 践行者和梦想中心移至专属tab
    ======================================== */
 
 /**
@@ -29,19 +29,17 @@ function renderProfilePage() {
   profileHeader.appendChild(avatar);
 
   var info = createEl("div", "profile-info");
-  var nameEl = createEl("div", "profile-name");
-  nameEl.textContent = uname + "  你已坚持" + streak + "天";
-  info.appendChild(nameEl);
 
-  // 等级徽章 + 进度
-  var levelEl = createEl("div", "profile-level");
-  levelEl.innerHTML = '<span class="level-badge">' + level.badge + ' Lv.' + level.level + '</span> <span class="level-name">' + level.name + '</span>';
+  // Lv等级 + 等级名 + 进度在一行
+  var nameEl = createEl("div", "profile-name");
+  var levelLine = '<span class="level-badge">' + level.badge + ' Lv.' + level.level + '</span> <span class="level-name">' + level.name + '</span>';
   if (level.level < 9) {
     var prog = getLevelProgress();
     var daysLeft = prog.next - prog.current;
-    levelEl.innerHTML += '<div class="level-progress" style="margin-top:4px;font-size:12px;color:#999">你已坚持' + prog.current + '天！离下一级还剩' + daysLeft + '天，继续加油哦！</div>';
+    levelLine += ' <span class="level-progress" style="font-size:12px;color:#999">离下一级还剩' + daysLeft + '天</span>';
   }
-  info.appendChild(levelEl);
+  nameEl.innerHTML = levelLine;
+  info.appendChild(nameEl);
 
   // 梦想币余额
   var statusEl = createEl("div", "profile-status");
@@ -54,7 +52,7 @@ function renderProfilePage() {
   // ── 账号与功能 ──
   var mainSection = createEl("div", "profile-section");
 
-  // 账号管理
+  // 账号管理（放在最上面）
   if (registered) {
     var itemAcct = makeSettingItem("账号管理", uname, function() {
       showAccountInfo();
@@ -66,26 +64,6 @@ function renderProfilePage() {
     });
     mainSection.appendChild(itemLogin);
   }
-
-  // 梦想中心
-  var dreams = getDreams();
-  var completedCount = dreams.filter(function(d) { return d.completed; }).length;
-  var itemDream = makeSettingItem("梦想中心", completedCount + "/" + dreams.length + " 已达成", function() {
-    showDreamCenter();
-  });
-  mainSection.appendChild(itemDream);
-
-  // 践行者入口
-  var isPrac = isPractitionerActivated();
-  var pracText = isPrac ? "已激活 ✓" : "输入激活码开启";
-  var itemPrac = makeSettingItem("⭐ 践行者", pracText, function() {
-    if (isPrac) {
-      showPractitionerCenter();
-    } else {
-      showPractitionerActivation();
-    }
-  });
-  mainSection.appendChild(itemPrac);
 
   // 主题商店
   var currentThemeName = getThemeName(getCurrentTheme());
@@ -104,7 +82,7 @@ function renderProfilePage() {
 
   // 关于
   var aboutSection = createEl("div", "profile-section");
-  var itemAbout = makeSettingItem("关于文峰手账", "v3.2.0", function() {
+  var itemAbout = makeSettingItem("关于籽芽手账", "v4.1.0", function() {
     showAbout();
   });
   aboutSection.appendChild(itemAbout);
@@ -118,23 +96,42 @@ function renderProfilePage() {
  */
 function showSettingsMenu() {
   var syncOn = getCloudSyncEnabled();
+  var phone = getPhone();
 
   var html = '<div class="settings-list">';
+
+  // 1) 本地备份
   html += '<div class="setting-item" role="button" tabindex="0" id="set-backup">';
   html += '<span class="si-label">数据备份与恢复</span>';
   html += '<span class="si-value">导出/导入</span>';
   html += '<span class="si-arrow">\u203a</span>';
   html += '</div>';
 
+  // 2) 多端云同步（开关）
   html += '<div class="setting-item" role="button" tabindex="0" id="set-sync">';
   html += '<span class="si-label">多端云同步</span>';
   html += '<span class="si-value">' + (syncOn ? "已开启" : "已关闭") + '</span>';
   html += '<span class="si-arrow">\u203a</span>';
   html += '</div>';
 
+  // 3) 云同步手机号（紧跟在多端云同步下面）
+  html += '<div class="setting-item" role="button" tabindex="0" id="set-phone">';
+  html += '<span class="si-label">云同步手机号</span>';
+  html += '<span class="si-value">' + (phone || "未设置") + '</span>';
+  html += '<span class="si-arrow">\u203a</span>';
+  html += '</div>';
+
+  // 4) 手动从云端恢复
+  html += '<div class="setting-item" role="button" tabindex="0" id="set-download">';
+  html += '<span class="si-label">从云端恢复数据</span>';
+  html += '<span class="si-value">手动下载</span>';
+  html += '<span class="si-arrow">\u203a</span>';
+  html += '</div>';
+
+  // 5) 排行榜
   html += '<div class="setting-item" role="button" tabindex="0" id="set-lb-view">';
   html += '<span class="si-label">打卡排行榜</span>';
-  html += '<span class="si-value">点击查看</span>';
+  html += '<span class="si-value">每日0点刷新</span>';
   html += '<span class="si-arrow">\u203a</span>';
   html += '</div>';
 
@@ -147,6 +144,9 @@ function showSettingsMenu() {
   var pageEl = topPage.el;
 
   setTimeout(function() {
+    var phoneItem = pageEl.querySelector("#set-phone");
+    if (phoneItem) phoneItem.addEventListener("click", function() { showPhoneSetting(); });
+
     var backupItem = pageEl.querySelector("#set-backup");
     if (backupItem) backupItem.addEventListener("click", function() { showBackupMenu(); });
 
@@ -156,11 +156,143 @@ function showSettingsMenu() {
       syncItem.querySelector(".si-value").textContent = getCloudSyncEnabled() ? "已开启" : "已关闭";
     });
 
+    var downloadItem = pageEl.querySelector("#set-download");
+    if (downloadItem) downloadItem.addEventListener("click", function() { showCloudDownload(); });
+
     var lbView = pageEl.querySelector("#set-lb-view");
     if (lbView) lbView.addEventListener("click", function() {
       showLeaderboard();
     });
   }, 50);
+}
+
+/**
+ * 云同步手机号设置
+ */
+function showPhoneSetting() {
+  var phone = getPhone();
+
+  var html = '<div class="form-page">';
+  html += '<p style="font-size:13px;color:#999;margin-bottom:12px;text-align:center">手机号是云同步的唯一标识，设置后可在其他设备通过手机号恢复数据。</p>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="ps-phone">手机号</label>';
+  html += '<input class="form-input" id="ps-phone" type="tel" placeholder="请输入手机号" value="' + phone + '" maxlength="11">';
+  html += '</div>';
+
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="ps-save" style="flex:1;min-height:44px">保存</button>';
+  html += '</div>';
+
+  html += '</div>';
+
+  showPage("云同步手机号", html);
+
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (!topPage) return;
+  var pageEl = topPage.el;
+
+  setTimeout(function() {
+    var saveBtn = pageEl.querySelector("#ps-save");
+    if (saveBtn) saveBtn.addEventListener("click", function() {
+      var p = pageEl.querySelector("#ps-phone").value.trim();
+      if (!p) { showToast("请输入手机号"); return; }
+      if (!/^1\d{10}$/.test(p)) { showToast("请输入正确的手机号"); return; }
+      setPhone(p);
+      showToast("手机号已保存");
+      hidePage();
+      renderProfilePage();
+    });
+  }, 50);
+}
+
+/**
+ * 手动从云端下载数据
+ */
+function showCloudDownload() {
+  var phone = getPhone();
+  if (!phone) {
+    showToast("请先设置云同步手机号");
+    return;
+  }
+
+  showPage("从云端恢复", '<div style="text-align:center;padding:20px;color:#999">正在从云端下载数据...</div>');
+
+  initCloudBase(function(err) {
+    if (err) {
+      _updateCloudDownloadPage("云服务连接失败：" + err.message);
+      return;
+    }
+
+    if (!_uid) {
+      cloudSignInAnonymously(function(loginErr) {
+        if (loginErr) {
+          _updateCloudDownloadPage("登录失败：" + loginErr.message);
+          return;
+        }
+        _doCloudDownload(phone);
+      });
+    } else {
+      _doCloudDownload(phone);
+    }
+  });
+}
+
+function _doCloudDownload(phone) {
+  cloudFindByPhone(phone, function(err, cloudData) {
+    if (err) {
+      _updateCloudDownloadPage("下载失败：" + err.message);
+      return;
+    }
+    if (!cloudData) {
+      _updateCloudDownloadPage("云端没有找到该手机号的数据");
+      return;
+    }
+
+    var cloudDate = cloudData.updatedAt ? new Date(cloudData.updatedAt).toLocaleString("zh-CN") : "未知时间";
+
+    var html = '<div class="confirm-page">';
+    html += '<p class="confirm-message">云端有一份备份数据（更新于 ' + cloudDate + '）。\n\n是否用云端数据覆盖本地？</p>';
+    html += '<div class="confirm-actions">';
+    html += '<button class="btn-secondary" id="cf-cancel" style="flex:1;min-height:44px">取消</button>';
+    html += '<button class="btn-primary" id="cf-overwrite" style="flex:1;min-height:44px">覆盖本地</button>';
+    html += '</div>';
+    html += '</div>';
+
+    _updateCloudDownloadPage(html);
+
+    var topPage = _pageStack[_pageStack.length - 1];
+    if (!topPage) return;
+    var pageEl = topPage.el;
+
+    setTimeout(function() {
+      var cancelBtn = pageEl.querySelector("#cf-cancel");
+      if (cancelBtn) cancelBtn.addEventListener("click", hidePage);
+
+      var overwriteBtn = pageEl.querySelector("#cf-overwrite");
+      if (overwriteBtn) overwriteBtn.addEventListener("click", function() {
+        if (cloudData.appData) saveData(cloudData.appData);
+        if (cloudData.books) localStorage.setItem("wenfeng_books", JSON.stringify(cloudData.books));
+        if (cloudData.bookProgress) localStorage.setItem("wenfeng_book_progress", cloudData.bookProgress);
+        if (cloudData.theme) {
+          setCurrentTheme(cloudData.theme.current || "default");
+          if (cloudData.theme.purchased) {
+            localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(cloudData.theme.purchased));
+          }
+        }
+        hidePage();
+        initTheme();
+        updateQuoteBar();
+        switchTab("checkin");
+        showToast("已从云端恢复数据");
+      });
+    }, 50);
+  });
+}
+
+function _updateCloudDownloadPage(html) {
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (topPage) topPage.el.querySelector(".page-body").innerHTML = html;
 }
 
 function makeSettingItem(label, value, onClick) {
@@ -597,119 +729,119 @@ function toggleLeaderboard() {
 // ══════════════════════════════════════════════
 
 var THEMES = [
-  { id: "default", name: "简约白", cost: 0,
+  { id: "default", name: "简约白", cost: 0, icon: "✦",
     bg: "#FFFFFF", bgSecondary: "#F5F5F5", textPrimary: "#1A1A1A",
     brand: "#07C160", border: "#E0E0E0" },
-  { id: "warm", name: "暖米色", cost: 10,
+  { id: "warm", name: "暖米色", cost: 10, icon: "☀",
     bg: "#FFFDF5", bgSecondary: "#FFF8E7", textPrimary: "#3D3226",
     brand: "#D4925A", border: "#E8DCC8" },
-  { id: "mint", name: "薄荷绿", cost: 10,
+  { id: "mint", name: "薄荷绿", cost: 10, icon: "🌿",
     bg: "#F5FFFA", bgSecondary: "#E8F5E9", textPrimary: "#1B3B2B",
     brand: "#4CAF50", border: "#C8E6C9" },
-  { id: "lavender", name: "薰衣草紫", cost: 10,
+  { id: "lavender", name: "薰衣草紫", cost: 10, icon: "❀",
     bg: "#FDFBFF", bgSecondary: "#F3E5F5", textPrimary: "#2D1B3D",
     brand: "#9C27B0", border: "#E1BEE7" },
-  { id: "ocean", name: "海洋蓝", cost: 10,
+  { id: "ocean", name: "海洋蓝", cost: 10, icon: "🌊",
     bg: "#F5FAFF", bgSecondary: "#E3F2FD", textPrimary: "#0D2137",
     brand: "#2196F3", border: "#BBDEFB" },
-  { id: "dark", name: "暗夜黑", cost: 15,
+  { id: "dark", name: "暗夜黑", cost: 15, icon: "🌙",
     bg: "#1A1A1A", bgSecondary: "#2D2D2D", textPrimary: "#E0E0E0",
     brand: "#4FE387", border: "#444444" },
-  { id: "cat_milk", name: "奶糖猫咪", cost: 12,
+  { id: "cat_milk", name: "奶糖猫咪", cost: 12, icon: "🐱",
     bg: "#FFFDF9", bgSecondary: "#FFF3E0", textPrimary: "#5D4037",
     brand: "#FFAB91", border: "#FFCCBC" },
-  { id: "cat_tabby", name: "虎斑猫咪", cost: 12,
+  { id: "cat_tabby", name: "虎斑猫咪", cost: 12, icon: "🐈",
     bg: "#FAF6F0", bgSecondary: "#EFEBE0", textPrimary: "#4E342E",
     brand: "#A1887F", border: "#D7CCC8" },
-  { id: "cat_calico", name: "三花猫咪", cost: 12,
+  { id: "cat_calico", name: "三花猫咪", cost: 12, icon: "🐈‍",
     bg: "#FFFBF7", bgSecondary: "#FDE8D0", textPrimary: "#3E2723",
     brand: "#FF8A65", border: "#FFCC80" },
-  { id: "cat_tuxedo", name: "奶牛猫咪", cost: 12,
+  { id: "cat_tuxedo", name: "奶牛猫咪", cost: 12, icon: "🐈‍⬛",
     bg: "#FAFAFA", bgSecondary: "#ECEFF1", textPrimary: "#37474F",
     brand: "#546E7A", border: "#CFD8DC" },
-  { id: "cat_ginger", name: "橘色猫咪", cost: 12,
+  { id: "cat_ginger", name: "橘色猫咪", cost: 12, icon: "🐾",
     bg: "#FFFDF7", bgSecondary: "#FFF3CD", textPrimary: "#5D3A00",
     brand: "#FF9800", border: "#FFE082" },
-  { id: "cat_silver", name: "银渐层猫咪", cost: 15,
+  { id: "cat_silver", name: "银渐层猫咪", cost: 15, icon: "😺",
     bg: "#F8F9FB", bgSecondary: "#E8ECF1", textPrimary: "#37474F",
     brand: "#78909C", border: "#B0BEC5" },
-  { id: "cat_blush", name: "害羞猫咪", cost: 15,
+  { id: "cat_blush", name: "害羞猫咪", cost: 15, icon: "😳",
     bg: "#FFF5F7", bgSecondary: "#FCE4EC", textPrimary: "#4A282F",
     brand: "#F48FB1", border: "#F8BBD0" },
-  { id: "cat_sleep", name: "瞌睡猫咪", cost: 15,
+  { id: "cat_sleep", name: "瞌睡猫咪", cost: 15, icon: "😴",
     bg: "#F5F0FF", bgSecondary: "#EDE7F6", textPrimary: "#311B92",
     brand: "#B39DDB", border: "#D1C4E9" },
-  { id: "shiba", name: "微笑柴犬", cost: 10,
+  { id: "shiba", name: "微笑柴犬", cost: 10, icon: "🐕",
     bg: "#FFFDF5", bgSecondary: "#FFF3E0", textPrimary: "#5D4037",
     brand: "#FF8A65", border: "#FFCC80" },
-  { id: "bunny", name: "奶糖白兔", cost: 10,
+  { id: "bunny", name: "奶糖白兔", cost: 10, icon: "🐰",
     bg: "#FFFBFB", bgSecondary: "#FFF0F5", textPrimary: "#4A2828",
     brand: "#F8BBD0", border: "#FFCDD2" },
-  { id: "bear", name: "小熊软糖", cost: 10,
+  { id: "bear", name: "小熊软糖", cost: 10, icon: "🐻",
     bg: "#FFFDF9", bgSecondary: "#FDE8C8", textPrimary: "#4E342E",
     brand: "#FFB74D", border: "#FFE0B2" },
-  { id: "deer", name: "小鹿斑比", cost: 10,
+  { id: "deer", name: "小鹿斑比", cost: 10, icon: "🦌",
     bg: "#FFFDF7", bgSecondary: "#E8F5E9", textPrimary: "#2E4A2E",
     brand: "#8D6E63", border: "#C8E6C9" },
-  { id: "cloud", name: "云朵棉花", cost: 10,
+  { id: "cloud", name: "云朵棉花", cost: 10, icon: "☁",
     bg: "#FBFDFF", bgSecondary: "#E3F2FD", textPrimary: "#1A3A4A",
     brand: "#90CAF9", border: "#BBDEFB" },
-  { id: "sakura", name: "樱花飞舞", cost: 15,
+  { id: "sakura", name: "樱花飞舞", cost: 15, icon: "🌸",
     bg: "#FFFBFB", bgSecondary: "#FCE4EC", textPrimary: "#4A1A2A",
     brand: "#F48FB1", border: "#F8BBD0" },
-  { id: "succulent", name: "多肉花园", cost: 10,
+  { id: "succulent", name: "多肉花园", cost: 10, icon: "🌵",
     bg: "#FDFDF5", bgSecondary: "#E8F5E9", textPrimary: "#2E4A2E",
     brand: "#81C784", border: "#C8E6C9" },
-  { id: "dolphin", name: "海豚湾", cost: 15,
+  { id: "dolphin", name: "海豚湾", cost: 15, icon: "🐬",
     bg: "#F5FDFF", bgSecondary: "#E0F7FA", textPrimary: "#0D3B4A",
     brand: "#4DD0E1", border: "#B2EBF2" },
-  { id: "starry", name: "星空物语", cost: 15,
+  { id: "starry", name: "星空物语", cost: 15, icon: "⭐",
     bg: "#1A1A2E", bgSecondary: "#16213E", textPrimary: "#E0E0E0",
     brand: "#7C83FD", border: "#0F3460" },
-  { id: "forest", name: "森林小熊", cost: 10,
+  { id: "forest", name: "森林小熊", cost: 10, icon: "🌲",
     bg: "#F5F9F0", bgSecondary: "#E8F0DE", textPrimary: "#3D4A2E",
     brand: "#A5B87A", border: "#D4E0C8" }
 ];
 
 // 践行者专属主题（仅激活后可用，更精美）
 var PRACTITIONER_THEMES = [
-  { id: "zen", name: "禅意灰", cost: 0,
+  { id: "zen", name: "禅意灰", cost: 0, icon: "🍃",
     bg: "#F8F8F8", bgSecondary: "#EEEEEE", textPrimary: "#2C2C2C",
     brand: "#8B7355", border: "#D5D5D5",
     desc: "极简禅意，静心修行" },
-  { id: "aurora", name: "极光绿", cost: 0,
+  { id: "aurora", name: "极光绿", cost: 0, icon: "🌌",
     bg: "#F0F8F0", bgSecondary: "#E0F0E0", textPrimary: "#1A3A1A",
     brand: "#5CB85C", border: "#C0E0C0",
     desc: "极光之色，生机盎然" },
-  { id: "sunrise", name: "日出金", cost: 0,
+  { id: "sunrise", name: "日出金", cost: 0, icon: "🌅",
     bg: "#FFFDF5", bgSecondary: "#FFF5E0", textPrimary: "#3D3018",
     brand: "#E6A817", border: "#E8D8B0",
     desc: "日出东方，金色希望" },
-  { id: "bamboo", name: "竹林青", cost: 0,
+  { id: "bamboo", name: "竹林青", cost: 0, icon: "🎋",
     bg: "#F5F9F5", bgSecondary: "#E8F0E0", textPrimary: "#2A3A2A",
     brand: "#6B8E23", border: "#C8D8B8",
     desc: "竹林清风，心境澄明" },
-  { id: "snow", name: "雪山白", cost: 0,
+  { id: "snow", name: "雪山白", cost: 0, icon: "❄",
     bg: "#FAFBFC", bgSecondary: "#F0F2F5", textPrimary: "#1A1D23",
     brand: "#4A90D9", border: "#D5DAE5",
     desc: "雪山之巅，纯净无暇" },
-  { id: "desert", name: "沙漠金", cost: 0,
+  { id: "desert", name: "沙漠金", cost: 0, icon: "🏜",
     bg: "#FFFDF7", bgSecondary: "#FFF5E0", textPrimary: "#3D3018",
     brand: "#D4A017", border: "#E8D8B0",
     desc: "大漠孤烟，坚韧修行" },
-  { id: "cosmos", name: "宇宙紫", cost: 0,
+  { id: "cosmos", name: "宇宙紫", cost: 0, icon: "🌌",
     bg: "#1A1A2E", bgSecondary: "#1A1A35", textPrimary: "#E0E0F0",
     brand: "#9B59B6", border: "#2D2D4A",
     desc: "星辰大海，无限可能" },
-  { id: "coral", name: "珊瑚橙", cost: 0,
+  { id: "coral", name: "珊瑚橙", cost: 0, icon: "🪸",
     bg: "#FFF8F5", bgSecondary: "#FFE8E0", textPrimary: "#3D2018",
     brand: "#FF7F50", border: "#FFD0C0",
     desc: "珊瑚海洋，温暖治愈" },
-  { id: "jade", name: "翡翠绿", cost: 0,
+  { id: "jade", name: "翡翠绿", cost: 0, icon: "💎",
     bg: "#F5FFF8", bgSecondary: "#E0F5E8", textPrimary: "#1A2A1E",
     brand: "#00A86B", border: "#C0E8D0",
     desc: "翡翠温润，君子之德" },
-  { id: "ink", name: "水墨黑", cost: 0,
+  { id: "ink", name: "水墨黑", cost: 0, icon: "🖌",
     bg: "#1A1A1A", bgSecondary: "#252525", textPrimary: "#D0D0D0",
     brand: "#C0A060", border: "#3A3A3A",
     desc: "水墨丹青，意境悠远" }
@@ -719,7 +851,95 @@ function getThemeName(themeId) {
   for (var i = 0; i < THEMES.length; i++) {
     if (THEMES[i].id === themeId) return THEMES[i].name;
   }
+  for (var j = 0; j < PRACTITIONER_THEMES.length; j++) {
+    if (PRACTITIONER_THEMES[j].id === themeId) return PRACTITIONER_THEMES[j].name;
+  }
   return "简约白";
+}
+
+function getThemeIcon(themeId) {
+  for (var i = 0; i < THEMES.length; i++) {
+    if (THEMES[i].id === themeId) return THEMES[i].icon || "\u2726";
+  }
+  for (var j = 0; j < PRACTITIONER_THEMES.length; j++) {
+    if (PRACTITIONER_THEMES[j].id === themeId) return PRACTITIONER_THEMES[j].icon || "\u2726";
+  }
+  return "\u2726";
+}
+
+/**
+ * 根据当前主题和任务类型获取不同图案
+ * taskType: task | nocomplaint | one | three | six | sunshine
+ */
+function getTaskTypeIcon(taskType) {
+  var themeId = getCurrentTheme();
+  var themeIcon = getThemeIcon(themeId);
+
+  // 猫咪主题：每种任务用不同的猫咪表情
+  if (themeId.indexOf("cat_") === 0) {
+    var catIcons = {
+      task: "\u{1F431}",
+      nocomplaint: "\u{1F63E}",
+      one: "\u{1F63A}",
+      three: "\u{1F638}",
+      six: "\u{1F63B}",
+      sunshine: "\u{1F63C}"
+    };
+    return catIcons[taskType] || themeIcon;
+  }
+
+  // 动物类主题
+  var animalThemes = ["shiba", "bunny", "bear", "deer", "dolphin"];
+  if (animalThemes.indexOf(themeId) >= 0) {
+    var animalIcons = {
+      task: themeIcon,
+      nocomplaint: "\u{1F610}",
+      one: "\u{1F4D6}",
+      three: "\u{1F4DD}",
+      six: "\u{1F4D8}",
+      sunshine: "\u{1F324}"
+    };
+    return animalIcons[taskType] || themeIcon;
+  }
+
+  // 植物类主题
+  var plantThemes = ["mint", "succulent", "bamboo", "forest", "sakura", "zen", "aurora"];
+  if (plantThemes.indexOf(themeId) >= 0) {
+    var plantIcons = {
+      task: themeIcon,
+      nocomplaint: "\u{1F910}",
+      one: "\u{1F33F}",
+      three: "\u{1F331}",
+      six: "\u{1F333}",
+      sunshine: "\u{1F305}"
+    };
+    return plantIcons[taskType] || themeIcon;
+  }
+
+  // 暗色/星空主题
+  var darkThemes = ["dark", "starry", "cosmos", "ink"];
+  if (darkThemes.indexOf(themeId) >= 0) {
+    var darkIcons = {
+      task: themeIcon,
+      nocomplaint: "\u{1F611}",
+      one: "\u{1F4D6}",
+      three: "\u{1F4DD}",
+      six: "\u{1F4D8}",
+      sunshine: "\u{1F319}"
+    };
+    return darkIcons[taskType] || themeIcon;
+  }
+
+  // 默认：普通任务用主题图标，其他类型用固定图标
+  var defaultIcons = {
+    task: themeIcon,
+    nocomplaint: "\u{1F910}",
+    one: "\u{1F4D6}",
+    three: "\u{1F4DD}",
+    six: "\u{1F4D8}",
+    sunshine: "\u{1F324}"
+  };
+  return defaultIcons[taskType] || themeIcon;
 }
 
 function getThemeById(themeId) {
@@ -743,6 +963,7 @@ function showThemeShop() {
     html += '<div class="theme-item">';
     html += '<div class="theme-item-info">';
     html += '<span class="theme-color-dot" style="background:' + theme.brand + '"></span>';
+    html += '<span class="theme-item-icon">' + (theme.icon || "✦") + '</span>';
     html += '<span class="theme-item-name">' + theme.name + '</span>';
     if (isCurrent) html += '<span class="theme-current-tag">(当前)</span>';
     html += '</div>';
@@ -830,7 +1051,7 @@ function initTheme() {
 
 function showBackupMenu() {
   var html = '<div class="form-page">';
-  html += '<p style="margin-bottom:8px;font-size:14px;color:var(--text-secondary);line-height:1.6">将你的打卡记录、梦想币、主题、书架数据导出为文件，换手机或重装时可以导入恢复。</p>';
+  html += '<p style="margin-bottom:8px;font-size:14px;color:var(--text-secondary);line-height:1.6">将你的打卡记录、梦想币、主题、书架数据导出为文件。手机版自动保存到"籽芽手账"文件夹，每天0点自动备份一次。</p>';
   html += '<div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">';
   html += '<button class="btn-primary" id="bk-export" style="min-height:44px">导出备份文件</button>';
   html += '<button class="btn-secondary" id="bk-import" style="min-height:44px">从文件导入恢复</button>';
@@ -881,7 +1102,7 @@ function showBackupMenu() {
 
 function exportData() {
   var backup = {
-    version: "3.2.0",
+    version: "4.1.0",
     exportDate: new Date().toISOString(),
     appData: loadData(),
     books: getBooks(),
@@ -897,31 +1118,46 @@ function exportData() {
   };
 
   var json = JSON.stringify(backup, null, 2);
-  var fileName = "wenfeng_backup_" + getTodayStr() + ".json";
+  var uname = getUsername();
+  if (uname === "未设置") uname = "用户";
+  var fileName = uname + "_备份_" + getTodayStr() + ".json";
 
-  // APK 版本：使用 Capacitor Filesystem 保存到下载目录
+  // APK 版本：使用 Capacitor Filesystem 保存到"籽芽手账"目录
   if (typeof window.Capacitor !== "undefined" && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
     var Filesystem = window.Capacitor.Plugins.Filesystem;
-    Filesystem.writeFile({
-      path: fileName,
-      data: json,
+    var dirPath = "籽芽手账";
+
+    Filesystem.mkdir({
+      path: dirPath,
       directory: "DOCUMENTS",
-      encoding: "utf8"
+      recursive: true
+    }).then(function() {
+      return Filesystem.writeFile({
+        path: dirPath + "/" + fileName,
+        data: json,
+        directory: "DOCUMENTS",
+        encoding: "utf8"
+      });
     }).then(function() {
       hidePage();
-      showToast("备份文件已保存到：Documents/" + fileName);
+      showToast("备份已保存到：Documents/" + dirPath + "/" + fileName);
     }).catch(function(err) {
-      // 如果 DOCUMENTS 不可用，尝试 DOWNLOADS
-      Filesystem.writeFile({
-        path: fileName,
-        data: json,
+      // 降级到 DOWNLOADS
+      Filesystem.mkdir({
+        path: dirPath,
         directory: "DOWNLOADS",
-        encoding: "utf8"
+        recursive: true
+      }).then(function() {
+        return Filesystem.writeFile({
+          path: dirPath + "/" + fileName,
+          data: json,
+          directory: "DOWNLOADS",
+          encoding: "utf8"
+        });
       }).then(function() {
         hidePage();
-        showToast("备份文件已保存到：Download/" + fileName);
+        showToast("备份已保存到：Download/" + dirPath + "/" + fileName);
       }).catch(function(err2) {
-        // 最终降级到下载
         _downloadBackup(json, fileName);
       });
     });
@@ -951,10 +1187,77 @@ function exportData() {
       _downloadBackup(json, fileName);
     });
   } else {
-    // 不支持 showSaveFilePicker 的浏览器（手机版）：直接下载
     _downloadBackup(json, fileName);
-    showToast("备份文件已下载，请在下载文件夹中查看");
+    showToast("备份文件已下载到下载文件夹");
   }
+}
+
+/**
+ * 自动备份（0点触发）
+ * 保存到"籽芽手账"目录，文件名带"自动备份"
+ */
+function autoBackupData() {
+  var backup = {
+    version: "4.1.0",
+    exportDate: new Date().toISOString(),
+    autoBackup: true,
+    appData: loadData(),
+    books: getBooks(),
+    bookProgress: JSON.parse(localStorage.getItem("wenfeng_book_progress") || "{}"),
+    theme: {
+      current: getCurrentTheme(),
+      purchased: getPurchasedThemes()
+    }
+  };
+
+  var json = JSON.stringify(backup, null, 2);
+  var uname = getUsername();
+  if (uname === "未设置") uname = "用户";
+  var fileName = uname + "_自动备份_" + getTodayStr() + ".json";
+
+  // APK 版本：自动保存到"籽芽手账"目录
+  if (typeof window.Capacitor !== "undefined" && window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem) {
+    var Filesystem = window.Capacitor.Plugins.Filesystem;
+    var dirPath = "籽芽手账";
+
+    Filesystem.mkdir({
+      path: dirPath,
+      directory: "DOCUMENTS",
+      recursive: true
+    }).then(function() {
+      return Filesystem.writeFile({
+        path: dirPath + "/" + fileName,
+        data: json,
+        directory: "DOCUMENTS",
+        encoding: "utf8"
+      });
+    }).then(function() {
+      localStorage.setItem("wenfeng_last_autobackup", getTodayStr());
+      console.log("自动备份完成：" + fileName);
+    }).catch(function(err) {
+      console.warn("自动备份失败:", err);
+    });
+    return;
+  }
+
+  // 网页版本：自动备份存到 localStorage（因为无法自动写文件）
+  try {
+    localStorage.setItem("wenfeng_autobackup", json);
+    localStorage.setItem("wenfeng_last_autobackup", getTodayStr());
+    console.log("自动备份已存到本地存储");
+  } catch(e) {
+    console.warn("自动备份失败:", e);
+  }
+}
+
+/**
+ * 检查是否需要自动备份（每日0点后首次打开时触发）
+ */
+function checkAutoBackup() {
+  var today = getTodayStr();
+  var lastBackup = localStorage.getItem("wenfeng_last_autobackup") || "";
+  if (lastBackup === today) return; // 今天已自动备份
+  autoBackupData();
 }
 
 function _downloadBackup(json, fileName) {
@@ -1029,14 +1332,19 @@ function importData(backup) {
 // ══════════════════════════════════════════════
 
 function showAbout() {
-  var html = '<div style="padding:24px 16px;text-align:center">';
-  html += '<p style="font-size:16px;font-weight:600;margin-bottom:8px">文峰手账 v3.2.0</p>';
-  html += '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:4px">纯文字无障碍打卡助手</p>';
-  html += '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:4px">专为读屏优化设计</p>';
-  html += '<br><p style="font-size:12px;color:#999">坚持打卡，成为更好的自己。</p>';
+  var html = '<div style="padding:32px 16px;text-align:center">';
+  html += '<p style="font-size:16px;font-weight:600;margin-bottom:8px">籽芽手账 v4.1.0</p>';
+  html += '<p style="font-size:13px;color:var(--brand);margin-bottom:16px;line-height:1.6">种子发芽，你每一次打卡都是对目标种子的一次施肥</p>';
+  html += '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:8px;line-height:1.8">每一天的坚持，都是送给未来的礼物。</p>';
+  html += '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:8px;line-height:1.8">小小的打卡，大大的改变。</p>';
+  html += '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:24px;line-height:1.8">愿你在这里，遇见更好的自己。</p>';
+  html += '<div style="border-top:1px solid var(--border-light);padding-top:20px">';
+  html += '<p style="font-size:13px;color:#999;margin-bottom:8px">联系作者</p>';
+  html += '<p style="font-size:14px;color:var(--brand);font-weight:600">QQ：862324160</p>';
+  html += '</div>';
   html += '</div>';
 
-  showPage("关于文峰手账", html);
+  showPage("关于籽芽手账", html);
 }
 
 // ══════════════════════════════════════════════
@@ -1062,10 +1370,8 @@ function showPractitionerActivation() {
 
   html += '<div style="padding:0 16px;margin-bottom:16px">';
   html += '<p style="font-size:12px;color:var(--text-hint);line-height:1.8">';
-  html += '激活码获取方式：<br>';
-  html += '1. 联系管理员获取<br>';
-  html += '2. 参与官方活动获得<br>';
-  html += '3. 邀请3位好友注册获得';
+  html += '获取激活码请联系管理员<br>';
+  html += 'QQ：862324160';
   html += '</p>';
   html += '</div>';
 
@@ -1146,16 +1452,14 @@ function showPractitionerCenter() {
   setTimeout(function() {
     var ncItem = pageEl.querySelector("#prac-nocomplain");
     if (ncItem) ncItem.addEventListener("click", function() {
-      showToast("不抱怨挑战已显示在打卡页面");
       hidePage();
-      switchTab("checkin");
+      switchTab("practitioner");
     });
 
     var omItem = pageEl.querySelector("#prac-onemoment");
     if (omItem) omItem.addEventListener("click", function() {
-      showToast("一时书已显示在打卡页面");
       hidePage();
-      switchTab("checkin");
+      switchTab("practitioner");
     });
 
     var thItem = pageEl.querySelector("#prac-themes");
@@ -1298,7 +1602,7 @@ function showAddNoComplaintForm() {
 
   html += '<div class="form-group">';
   html += '<label class="form-label" for="nc-name">挑战名字</label>';
-  html += '<input class="form-input" id="nc-name" type="text" placeholder="不抱怨挑战" value="不抱怨挑战">';
+  html += '<input class="form-input" id="nc-name" type="text" placeholder="给不抱怨取一个具体的名字吧">';
   html += '</div>';
 
   html += '<div class="form-group">';
@@ -1521,15 +1825,22 @@ function _renderNoComplaintSummary(challenge, period) {
 
   var html = '<div class="nc-summary-box">';
   html += '<h4>统计总结</h4>';
-  html += '<p>本期抱怨总次数：' + currentCount + ' 次（' + currentDays + ' 天）</p>';
+  var avgPerDay = currentDays > 0 ? (currentCount / currentDays).toFixed(1) : "0";
+  html += '<p>这段时间，你一共抱怨了 ' + currentCount + ' 次，平均每天 ' + avgPerDay + ' 次</p>';
   if (isFirstDay) {
-    html += '<p style="color:#999">今天是第一天，暂无同比数据</p>';
+    html += '<p style="color:#999">刚开始记录，继续坚持哦</p>';
   } else {
-    html += '<p>上期抱怨总次数：' + prevCount + ' 次（' + prevDays + ' 天）</p>';
+    var avgPrev = prevDays > 0 ? (prevCount / prevDays).toFixed(1) : "0";
+    html += '<p>上次这段时间抱怨了 ' + prevCount + ' 次，平均每天 ' + avgPrev + ' 次</p>';
     var changePct = prevCount === 0 ? (currentCount === 0 ? 0 : 100) : Math.round((currentCount - prevCount) / prevCount * 100);
-    var changeText = changePct > 0
-      ? ("同比增加 " + changePct + "%，需要更多觉察哦")
-      : (changePct < 0 ? ("同比减少 " + Math.abs(changePct) + "%，太棒了！继续加油") : "与上期持平");
+    var changeText;
+    if (changePct > 0) {
+      changeText = "比上次多了 " + changePct + "%，多一点觉察，少一点抱怨";
+    } else if (changePct < 0) {
+      changeText = "比上次少了 " + Math.abs(changePct) + "%，进步很大，继续保持";
+    } else {
+      changeText = "和上次差不多，继续加油";
+    }
     html += '<p style="color:' + (changePct <= 0 ? "#07C160" : "#E64340") + ';font-weight:600">' + changeText + '</p>';
   }
   html += '</div>';

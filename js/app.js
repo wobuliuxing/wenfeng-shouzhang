@@ -1,5 +1,5 @@
 /* ========================================
-   文峰手账 - 主控制器
+   籽芽手账 - 主控制器
    处理导航、页面栈、Toast、生命周期
    v3.0: 弹窗改为页面导航，解决跳动问题
    ======================================== */
@@ -32,10 +32,17 @@ document.addEventListener("DOMContentLoaded", function() {
         if (!e) showToast("数据已同步到云端");
       });
     }
+    // 排行榜每日0点刷新：如果今天还没推送过，推送一次
+    _checkLeaderboardDailyRefresh();
   });
 
   // 检查梦想中心是否有新完成的梦想
   checkDreamCompletion();
+
+  // 检查自动备份（每日0点后首次打开触发）
+  if (typeof checkAutoBackup === "function") {
+    checkAutoBackup();
+  }
 
   // 选项卡点击
   var tabBtns = document.querySelectorAll(".tab-btn");
@@ -145,6 +152,9 @@ function switchTab(tab) {
     case "reader":
       renderReaderPage();
       break;
+    case "practitioner":
+      renderPractitionerPage();
+      break;
     case "profile":
       renderProfilePage();
       break;
@@ -178,6 +188,31 @@ function closeReaderIfOpen() {
     if (!_isCapacitor()) {
       history.back();
     }
+  }
+}
+
+/**
+ * 排行榜每日0点刷新检查
+ * 如果今天还没推送过排行榜数据，则推送一次
+ */
+function _checkLeaderboardDailyRefresh() {
+  var today = getTodayStr();
+  var lastPush = localStorage.getItem("wenfeng_lb_last_push") || "";
+  if (lastPush === today) return; // 今天已推送
+
+  // 匿名登录后推送
+  if (!_uid) {
+    cloudSignInAnonymously(function() {
+      if (_uid) {
+        cloudPushLeaderboard(getCoins(), getUsername(), function() {
+          localStorage.setItem("wenfeng_lb_last_push", today);
+        });
+      }
+    });
+  } else {
+    cloudPushLeaderboard(getCoins(), getUsername(), function() {
+      localStorage.setItem("wenfeng_lb_last_push", today);
+    });
   }
 }
 

@@ -50,7 +50,7 @@ function generateShareCard(task) {
   ctx.fillStyle = "#FFFFFF";
   ctx.font = "bold 42px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText("文峰手账", w / 2, 72);
+  ctx.fillText("籽芽手账", w / 2, 72);
 
   // 副标题
   ctx.font = "22px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
@@ -238,7 +238,7 @@ function generateShareCard(task) {
   // 底部品牌
   ctx.fillStyle = "#CCC";
   ctx.font = "18px -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif";
-  ctx.fillText("— 文峰手账 · 记录每一天 —", w / 2, dateY + 50);
+  ctx.fillText("— 籽芽手账 · 记录每一天 —", w / 2, dateY + 50);
 
   // ── 底部水印装饰 ──
   var wmAlpha = theme.id === "dark" ? 0.08 : 0.04;

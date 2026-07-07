@@ -1,5 +1,5 @@
 /* ========================================
-   文峰手账 - 纯文字无障碍样式
+   籽芽手账 - 纯文字无障碍样式
    微信会话列表风格，高对比度，读屏友好
    ======================================== */
 
@@ -628,9 +628,25 @@ html.reader-open #tab-bar {
 }
 
 .profile-name {
-  font-size: var(--font-lg);
+  font-size: var(--font-md);
   font-weight: 600;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  line-height: 1.6;
+}
+
+.profile-name .level-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.profile-name .level-progress {
+  font-size: var(--font-xs);
+  color: var(--text-hint);
+  font-weight: 400;
 }
 
 .profile-status {
@@ -719,6 +735,21 @@ html.reader-open #tab-bar {
   font-size: var(--font-sm);
   color: var(--text-hint);
   margin-left: 8px;
+}
+
+.setting-item-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--bg-secondary);
+}
+
+.setting-item-disabled .si-label {
+  color: var(--text-hint);
+}
+
+.setting-item-disabled .si-value {
+  color: #C77B00;
+  font-weight: 500;
 }
 
 /* ── 弹窗容器（保留给旧代码兼容，不再使用） ── */
@@ -1005,6 +1036,12 @@ html.reader-open #tab-bar {
   height: 24px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.theme-item-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  line-height: 1;
 }
 
 .theme-item-name {
@@ -1507,6 +1544,39 @@ select:focus-visible {
 
 .action-bar .btn-secondary {
   margin-top: 8px;
+}
+
+/* ── 践行者tab激活提示 ── */
+.prac-tab-prompt {
+  background: var(--bg);
+}
+
+/* ── 连续打卡目标 ── */
+.streak-tracking {
+  background: var(--bg);
+}
+
+.streak-item {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.streak-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.streak-item-name {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.streak-toggle:focus-visible {
+  outline: 3px solid var(--brand);
+  outline-offset: 2px;
 }
 
 /* 确保纯文字可读 */
