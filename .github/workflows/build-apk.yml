@@ -42,13 +42,28 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      # ★ 签名密钥：优先使用 GitHub Secret 中存储的固定密钥
-      # 如果没有 Secret，则生成一个并上传为 artifact（仅首次需要）
-      - name: 准备签名密钥
+      # ★ 检查是否有固定签名密钥的 Secret
+      - name: 检查签名密钥
+        id: check_keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "has_keystore=true" >> $GITHUB_OUTPUT
+            echo "检测到固定签名密钥"
+          else
+            echo "has_keystore=false" >> $GITHUB_OUTPUT
+            echo "未检测到固定签名密钥，将生成新密钥"
+          fi
+
+      # ★ 签名密钥：优先使用 GitHub Secret 中存储的固定密钥
+      - name: 准备签名密钥
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ "$KEYSTORE_BASE64" != "" ]; then
             echo "使用 GitHub Secret 中的固定签名密钥"
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/wenfeng.keystore
+            echo "$KEYSTORE_BASE64" | base64 -d > android/wenfeng.keystore
           else
             echo "首次构建：生成新的签名密钥（请保存为 GitHub Secret: KEYSTORE_BASE64）"
             keytool -genkey -v \
@@ -57,7 +72,7 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass wenfeng123 \
               -keypass wenfeng123 \
-              -dname "CN=Wenfeng, OU=App, O=Wenfeng, L=Beijing, ST=Beijing, C=CN"
+              -dname "CN=Ziya, OU=App, O=Ziya, L=Beijing, ST=Beijing, C=CN"
             # 上传密钥的 base64 编码，方便用户保存为 Secret
             KEYSTORE_B64=$(base64 -w 0 android/wenfeng.keystore)
             echo "KEYSTORE_BASE64=$KEYSTORE_B64" > keystore_info.txt
@@ -114,7 +129,7 @@ jobs:
 
       # 首次构建时上传密钥信息（如果 Secret 不存在）
       - name: 上传密钥信息（仅首次）
-        if: ${{ !secrets.KEYSTORE_BASE64 }}
+        if: steps.check_keystore.outputs.has_keystore == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: keystore-info
