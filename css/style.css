@@ -633,20 +633,27 @@ html.reader-open #tab-bar {
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   line-height: 1.6;
+  overflow: hidden;
 }
 
 .profile-name .level-name {
   color: var(--text-secondary);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .profile-name .level-progress {
-  font-size: var(--font-xs);
+  font-size: 11px;
   color: var(--text-hint);
   font-weight: 400;
+  white-space: nowrap;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-status {

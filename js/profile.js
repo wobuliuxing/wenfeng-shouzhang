@@ -575,9 +575,12 @@ function showDreamCenter() {
       html += '<div class="dream-done-date">达成日期：' + dream.completedDate + '</div>';
     }
 
-    // 非默认梦想可以删除
+    // 非默认梦想可以编辑/删除
     if (!dream.isDefault) {
-      html += '<button class="btn-danger dream-delete-btn" id="del-' + dream.id + '" style="margin-top:8px">删除此梦想</button>';
+      html += '<div style="display:flex;gap:8px;margin-top:8px">';
+      html += '<button class="btn-secondary dream-edit-btn" id="edit-' + dream.id + '" style="flex:1;min-height:40px">编辑</button>';
+      html += '<button class="btn-danger dream-delete-btn" id="del-' + dream.id + '" style="flex:1;min-height:40px">删除</button>';
+      html += '</div>';
     }
 
     html += '</div>';
@@ -600,9 +603,17 @@ function showDreamCenter() {
       showAddDreamForm();
     });
 
-    // 绑定删除按钮
+    // 绑定编辑/删除按钮
     dreams.forEach(function(dream) {
       if (!dream.isDefault) {
+        var editBtn = pageEl.querySelector("#edit-" + dream.id);
+        if (editBtn) editBtn.addEventListener("click", function(e) {
+          e.stopPropagation();
+          var dreamId = dream.id;
+          hidePage();
+          setTimeout(function() { showEditDreamForm(dreamId); }, 100);
+        });
+
         var delBtn = pageEl.querySelector("#del-" + dream.id);
         if (delBtn) delBtn.addEventListener("click", function(e) {
           e.stopPropagation();
@@ -619,6 +630,62 @@ function showDreamCenter() {
           }, 100);
         });
       }
+    });
+  }, 50);
+}
+
+function showEditDreamForm(dreamId) {
+  var dreams = getDreams();
+  var dream = null;
+  for (var i = 0; i < dreams.length; i++) {
+    if (dreams[i].id === dreamId) { dream = dreams[i]; break; }
+  }
+  if (!dream) { showToast("梦想不存在"); return; }
+
+  var html = '<div class="form-page">';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="edm-name">梦想名字</label>';
+  html += '<input class="form-input" id="edm-name" type="text" value="' + (dream.name || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="edm-days">坚持多少天</label>';
+  html += '<input class="form-input" id="edm-days" type="number" min="1" max="3650" value="' + (dream.targetDays || 7) + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="edm-reward">给自己的奖励</label>';
+  html += '<input class="form-input" id="edm-reward" type="text" value="' + (dream.reward || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="edm-save" style="flex:1;min-height:44px">保存修改</button>';
+  html += '</div>';
+
+  html += '</div>';
+
+  showPage("编辑梦想", html);
+
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (!topPage) return;
+  var pageEl = topPage.el;
+
+  setTimeout(function() {
+    var saveBtn = pageEl.querySelector("#edm-save");
+    if (saveBtn) saveBtn.addEventListener("click", function() {
+      var name = pageEl.querySelector("#edm-name").value.trim();
+      var days = pageEl.querySelector("#edm-days").value.trim();
+      var reward = pageEl.querySelector("#edm-reward").value.trim();
+
+      if (!name) { showToast("请给梦想起个名字"); return; }
+      if (!days || parseInt(days) < 1) { showToast("请输入坚持天数"); return; }
+      if (!reward) { showToast("请给自己一个奖励"); return; }
+
+      updateDream(dreamId, name, parseInt(days), reward);
+      showToast("梦想已更新");
+      hidePage();
+      setTimeout(function() { showDreamCenter(); }, 100);
     });
   }, 50);
 }
@@ -1105,7 +1172,9 @@ function exportData() {
     version: "4.1.0",
     exportDate: new Date().toISOString(),
     appData: loadData(),
-    books: getBooks(),
+    // 只备份书名列表（不备份书本身内容，避免文件过大）
+    bookList: getBooks().map(function(b) { return { id: b.id, name: b.name, added: b.added }; }),
+    // 只备份阅读进度（书签位置），不备份书内容
     bookProgress: JSON.parse(localStorage.getItem("wenfeng_book_progress") || "{}"),
     theme: {
       current: getCurrentTheme(),
@@ -1140,7 +1209,8 @@ function exportData() {
       });
     }).then(function() {
       hidePage();
-      showToast("备份已保存到：Documents/" + dirPath + "/" + fileName);
+      // 备份成功提示（明示路径，方便用户查找）
+      showToast("备份成功！已保存到手机：Documents/籽芽手账/" + fileName, 4000);
     }).catch(function(err) {
       // 降级到 DOWNLOADS
       Filesystem.mkdir({
@@ -1156,7 +1226,7 @@ function exportData() {
         });
       }).then(function() {
         hidePage();
-        showToast("备份已保存到：Download/" + dirPath + "/" + fileName);
+        showToast("备份成功！已保存到手机：Download/籽芽手账/" + fileName, 4000);
       }).catch(function(err2) {
         _downloadBackup(json, fileName);
       });
@@ -1181,20 +1251,21 @@ function exportData() {
       });
     }).then(function() {
       hidePage();
-      showToast("备份文件已保存到你选择的位置");
+      showToast("备份成功！已保存到本地：Documents/籽芽手账/" + fileName, 4000);
     }).catch(function(err) {
       if (err.name === "AbortError") return;
       _downloadBackup(json, fileName);
     });
   } else {
     _downloadBackup(json, fileName);
-    showToast("备份文件已下载到下载文件夹");
+    showToast("备份成功！文件已下载到下载文件夹：籽芽手账/" + fileName, 4000);
   }
 }
 
 /**
  * 自动备份（0点触发）
  * 保存到"籽芽手账"目录，文件名带"自动备份"
+ * 只备份书签（书名+进度），不备份书本身
  */
 function autoBackupData() {
   var backup = {
@@ -1202,7 +1273,7 @@ function autoBackupData() {
     exportDate: new Date().toISOString(),
     autoBackup: true,
     appData: loadData(),
-    books: getBooks(),
+    bookList: getBooks().map(function(b) { return { id: b.id, name: b.name, added: b.added }; }),
     bookProgress: JSON.parse(localStorage.getItem("wenfeng_book_progress") || "{}"),
     theme: {
       current: getCurrentTheme(),
@@ -1303,13 +1374,13 @@ function importData(backup) {
 
   var summary = "即将恢复以下数据：\n";
   if (backup.appData.tasks) summary += "打卡任务：" + backup.appData.tasks.length + "个\n";
-  if (backup.books) summary += "书架书籍：" + backup.books.length + "本\n";
+  if (backup.bookList) summary += "书签名录：" + backup.bookList.length + "本（仅书名+进度，书本身不备份）\n";
   if (backup.appData.coins !== undefined) summary += "梦想币：" + backup.appData.coins + "\n";
   summary += "\n注意：导入将覆盖当前数据！";
 
   showConfirm("确认导入", summary, "确认导入", function() {
     saveData(backup.appData);
-    if (backup.books) localStorage.setItem("wenfeng_books", JSON.stringify(backup.books));
+    // 备份文件不包含书本身内容，只恢复书签
     if (backup.bookProgress) localStorage.setItem("wenfeng_book_progress", JSON.stringify(backup.bookProgress));
     if (backup.theme) {
       setCurrentTheme(backup.theme.current || "default");
@@ -1655,21 +1726,26 @@ function showNoComplaintDetail(cid) {
   var challenge = getNoComplaintChallenge(cid);
   if (!challenge) { showToast("挑战不存在"); return; }
 
+  var ncStreak = _getNoComplaintStreak(challenge);
+
   var html = '<div class="nc-detail">';
 
   html += '<div class="nc-detail-header">';
-  html += '<h3>' + challenge.name + '</h3>';
-  html += '<p>目标 ' + challenge.targetDays + ' 天 | 已记录 ' + challenge.records.length + ' 天</p>';
+  html += '<p>目标 ' + challenge.targetDays + ' 天 | 已记录 ' + challenge.records.length + ' 天 | 连续' + ncStreak + '天</p>';
   if (challenge.signature) {
     html += '<p>签名：「' + challenge.signature + '」</p>';
   }
   html += '</div>';
 
-  html += '<div class="nc-period-selector">';
-  html += '<button class="nc-period-btn active" data-period="day">1天</button>';
-  html += '<button class="nc-period-btn" data-period="week">1周</button>';
-  html += '<button class="nc-period-btn" data-period="month">1月</button>';
-  html += '<button class="nc-period-btn" data-period="year">1年</button>';
+  // 组合框选择统计周期
+  html += '<div style="padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--border-light)">';
+  html += '<label for="nc-period-select" style="font-size:13px;color:var(--text-secondary);margin-right:8px">统计周期</label>';
+  html += '<select id="nc-period-select" class="form-select" style="width:auto;display:inline-block;min-height:36px;padding:6px 12px">';
+  html += '<option value="day">1天</option>';
+  html += '<option value="week">1周</option>';
+  html += '<option value="month">1月</option>';
+  html += '<option value="year">1年</option>';
+  html += '</select>';
   html += '</div>';
 
   html += '<div class="nc-stats-table" id="nc-stats-table">';
@@ -1680,9 +1756,10 @@ function showNoComplaintDetail(cid) {
   html += _renderNoComplaintSummary(challenge, "day");
   html += '</div>';
 
-  html += '<div style="display:flex;gap:10px;margin:16px">';
-  html += '<button class="btn-primary" id="nc-add-quick" style="flex:1;min-height:40px">+ 记录一次抱怨</button>';
-  html += '<button class="btn-danger" id="nc-delete" style="flex:1;min-height:40px">删除此挑战</button>';
+  html += '<div style="display:flex;gap:10px;margin:16px;flex-wrap:wrap">';
+  html += '<button class="btn-primary" id="nc-add-quick" style="flex:1;min-height:40px;min-width:100px">+ 记录一次抱怨</button>';
+  html += '<button class="btn-secondary" id="nc-edit" style="flex:1;min-height:40px;min-width:80px">编辑</button>';
+  html += '<button class="btn-danger" id="nc-delete" style="flex:1;min-height:40px;min-width:80px">删除</button>';
   html += '</div>';
 
   html += '</div>';
@@ -1694,17 +1771,13 @@ function showNoComplaintDetail(cid) {
   var pageEl = topPage.el;
 
   setTimeout(function() {
-    var periodBtns = pageEl.querySelectorAll(".nc-period-btn");
-    periodBtns.forEach(function(btn) {
-      btn.addEventListener("click", function() {
-        var period = btn.getAttribute("data-period");
-        periodBtns.forEach(function(b) { b.classList.remove("active"); });
-        btn.classList.add("active");
-        var tableEl = pageEl.querySelector("#nc-stats-table");
-        var summaryEl = pageEl.querySelector("#nc-summary");
-        if (tableEl) tableEl.innerHTML = _renderNoComplaintStats(challenge, period);
-        if (summaryEl) summaryEl.innerHTML = _renderNoComplaintSummary(challenge, period);
-      });
+    var periodSelect = pageEl.querySelector("#nc-period-select");
+    if (periodSelect) periodSelect.addEventListener("change", function() {
+      var period = this.value;
+      var tableEl = pageEl.querySelector("#nc-stats-table");
+      var summaryEl = pageEl.querySelector("#nc-summary");
+      if (tableEl) tableEl.innerHTML = _renderNoComplaintStats(challenge, period);
+      if (summaryEl) summaryEl.innerHTML = _renderNoComplaintSummary(challenge, period);
     });
 
     var addQuickBtn = pageEl.querySelector("#nc-add-quick");
@@ -1714,6 +1787,12 @@ function showNoComplaintDetail(cid) {
       showToast("已记录一次抱怨");
       hidePage();
       setTimeout(function() { showNoComplaintDetail(cid); }, 100);
+    });
+
+    var editBtn = pageEl.querySelector("#nc-edit");
+    if (editBtn) editBtn.addEventListener("click", function() {
+      hidePage();
+      setTimeout(function() { showEditNoComplaintForm(cid); }, 100);
     });
 
     var delBtn = pageEl.querySelector("#nc-delete");
@@ -1727,6 +1806,62 @@ function showNoComplaintDetail(cid) {
           refreshCheckinList();
         }, true);
       }, 100);
+    });
+  }, 50);
+}
+
+/**
+ * 编辑不抱怨挑战表单
+ */
+function showEditNoComplaintForm(cid) {
+  var challenge = getNoComplaintChallenge(cid);
+  if (!challenge) { showToast("挑战不存在"); return; }
+
+  var html = '<div class="form-page">';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="enc-name">挑战名字</label>';
+  html += '<input class="form-input" id="enc-name" type="text" value="' + challenge.name + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="enc-days">准备挑战多少天</label>';
+  html += '<input class="form-input" id="enc-days" type="number" min="1" max="365" value="' + challenge.targetDays + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="enc-note">备注（可选）</label>';
+  html += '<input class="form-input" id="enc-note" type="text" value="' + (challenge.note || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="enc-sig">自定义签名（可选）</label>';
+  html += '<input class="form-input" id="enc-sig" type="text" value="' + (challenge.signature || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="enc-save" style="flex:1;min-height:44px">保存修改</button>';
+  html += '</div>';
+
+  html += '</div>';
+
+  showPage("编辑不抱怨挑战", html);
+
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (!topPage) return;
+  var pageEl = topPage.el;
+
+  setTimeout(function() {
+    var saveBtn = pageEl.querySelector("#enc-save");
+    if (saveBtn) saveBtn.addEventListener("click", function() {
+      var name = pageEl.querySelector("#enc-name").value.trim() || "不抱怨挑战";
+      var days = pageEl.querySelector("#enc-days").value.trim() || "21";
+      var note = pageEl.querySelector("#enc-note").value.trim();
+      var sig = pageEl.querySelector("#enc-sig").value.trim();
+      updateNoComplaintChallenge(cid, name, days, note, sig);
+      showToast("挑战已更新");
+      hidePage();
+      refreshCheckinList();
     });
   }, 50);
 }
@@ -1832,16 +1967,16 @@ function _renderNoComplaintSummary(challenge, period) {
   } else {
     var avgPrev = prevDays > 0 ? (prevCount / prevDays).toFixed(1) : "0";
     html += '<p>上次这段时间抱怨了 ' + prevCount + ' 次，平均每天 ' + avgPrev + ' 次</p>';
-    var changePct = prevCount === 0 ? (currentCount === 0 ? 0 : 100) : Math.round((currentCount - prevCount) / prevCount * 100);
+    var diff = currentCount - prevCount;
     var changeText;
-    if (changePct > 0) {
-      changeText = "比上次多了 " + changePct + "%，多一点觉察，少一点抱怨";
-    } else if (changePct < 0) {
-      changeText = "比上次少了 " + Math.abs(changePct) + "%，进步很大，继续保持";
+    if (diff > 0) {
+      changeText = "比上次多了 " + diff + " 次，多一点觉察，少一点抱怨";
+    } else if (diff < 0) {
+      changeText = "比上次少了 " + Math.abs(diff) + " 次，进步很大，继续保持";
     } else {
-      changeText = "和上次差不多，继续加油";
+      changeText = "和上次一样多，继续加油";
     }
-    html += '<p style="color:' + (changePct <= 0 ? "#07C160" : "#E64340") + ';font-weight:600">' + changeText + '</p>';
+    html += '<p style="color:' + (diff <= 0 ? "#07C160" : "#E64340") + ';font-weight:600">' + changeText + '</p>';
   }
   html += '</div>';
   return html;
@@ -2065,7 +2200,6 @@ function showOneMomentBookDetail(bid) {
   var html = '<div class="omb-detail">';
 
   html += '<div class="omb-detail-header">';
-  html += '<h3>' + book.name + '</h3>';
   if (book.prompt) {
     html += '<p style="color:#999;font-size:13px">为什么：' + book.prompt + '</p>';
   }
@@ -2087,6 +2221,7 @@ function showOneMomentBookDetail(bid) {
   html += '</div>';
 
   html += '<div style="display:flex;gap:10px;margin:16px">';
+  html += '<button class="btn-secondary" id="omb-edit" style="flex:1;min-height:40px">编辑此一时书</button>';
   html += '<button class="btn-danger" id="omb-delete" style="flex:1;min-height:40px">删除此一时书</button>';
   html += '</div>';
 
@@ -2110,6 +2245,12 @@ function showOneMomentBookDetail(bid) {
       });
     });
 
+    var editBtn = pageEl.querySelector("#omb-edit");
+    if (editBtn) editBtn.addEventListener("click", function() {
+      hidePage();
+      setTimeout(function() { showEditOneMomentBookForm(bid); }, 100);
+    });
+
     var delBtn = pageEl.querySelector("#omb-delete");
     if (delBtn) delBtn.addEventListener("click", function() {
       hidePage();
@@ -2121,6 +2262,68 @@ function showOneMomentBookDetail(bid) {
           refreshCheckinList();
         }, true);
       }, 100);
+    });
+  }, 50);
+}
+
+function showEditOneMomentBookForm(bid) {
+  var book = getOneMomentBook(bid);
+  if (!book) { showToast("一时书不存在"); return; }
+
+  var html = '<div class="form-page">';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="eomb-name">目标名字</label>';
+  html += '<textarea class="form-input form-textarea" id="eomb-name">' + (book.name || "") + '</textarea>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="eomb-prompt">为什么要达成这个目标</label>';
+  html += '<textarea class="form-input form-textarea" id="eomb-prompt">' + (book.prompt || "") + '</textarea>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="eomb-time">提醒时间（可选）</label>';
+  html += '<select class="form-select" id="eomb-time">';
+  html += '<option value="">不提醒</option>';
+  for (var h = 0; h < 24; h++) {
+    var v = pad(h) + ":00";
+    var sel = (book.reminderTime === v) ? " selected" : "";
+    html += '<option value="' + v + '"' + sel + '>' + v + '</option>';
+  }
+  html += '</select>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="eomb-sig">自定义签名（可选）</label>';
+  html += '<input class="form-input" id="eomb-sig" type="text" value="' + (book.signature || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="eomb-save" style="flex:1;min-height:44px">保存修改</button>';
+  html += '</div>';
+
+  html += '</div>';
+
+  showPage("编辑一时书", html);
+
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (!topPage) return;
+  var pageEl = topPage.el;
+
+  setTimeout(function() {
+    var saveBtn = pageEl.querySelector("#eomb-save");
+    if (saveBtn) saveBtn.addEventListener("click", function() {
+      var name = pageEl.querySelector("#eomb-name").value.trim();
+      if (!name) { showToast("请填写目标名字"); return; }
+      var prompt = pageEl.querySelector("#eomb-prompt").value.trim();
+      var time = pageEl.querySelector("#eomb-time").value;
+      var sig = pageEl.querySelector("#eomb-sig").value.trim();
+
+      updateMomentBook("one", bid, name, prompt, time, sig);
+      showToast("一时书已更新");
+      hidePage();
+      setTimeout(function() { showOneMomentBookDetail(bid); }, 100);
     });
   }, 50);
 }

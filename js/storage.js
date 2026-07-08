@@ -593,6 +593,23 @@ function deleteDream(id) {
 }
 
 /**
+ * 更新梦想（编辑）
+ */
+function updateDream(id, name, targetDays, reward) {
+  var data = loadData();
+  if (!data.dreams) return;
+  for (var i = 0; i < data.dreams.length; i++) {
+    if (data.dreams[i].id === id) {
+      data.dreams[i].name = name;
+      data.dreams[i].targetDays = parseInt(targetDays);
+      data.dreams[i].reward = reward;
+      break;
+    }
+  }
+  saveData(data);
+}
+
+/**
  * 检查梦想完成状态
  * 基于当前连续打卡天数
  * @returns {array} 新完成的梦想列表
@@ -647,6 +664,7 @@ function getUsedActivationCodes() {
 
 /**
  * 验证并激活践行者
+ * 激活码与当前手机号绑定
  * @param {string} code - 激活码
  * @returns {object} { success, msg }
  */
@@ -670,28 +688,66 @@ function activatePractitioner(code) {
   // 检查是否已使用（本地）
   var used = getUsedActivationCodes();
   if (used.indexOf(cleanCode) >= 0) {
+    // 检查是否绑定的是当前手机号
+    var data0 = loadData();
+    var boundPhone = "";
+    if (data0._codePhoneMap && data0._codePhoneMap[cleanCode]) {
+      boundPhone = data0._codePhoneMap[cleanCode];
+    }
+    var currentPhone = getPhone();
+    if (boundPhone && currentPhone && boundPhone === currentPhone) {
+      // 同一手机号，允许重新激活
+      if (!data0.practitioner) data0.practitioner = { activated: false, activationCode: "", activatedDate: "", avatar: "", icon: "default" };
+      data0.practitioner.activated = true;
+      data0.practitioner.activationCode = cleanCode;
+      data0.practitioner.activatedDate = getTodayStr();
+      data0.practitioner.boundPhone = currentPhone;
+      saveData(data0);
+      return { success: true, msg: "践行者模块已激活！（本机手机号已绑定）" };
+    }
     return { success: false, msg: "该激活码已被使用，请联系管理员" };
+  }
+
+  // 获取当前手机号
+  var currentPhone = getPhone();
+  if (!currentPhone) {
+    return { success: false, msg: "请先在设置中绑定手机号再激活" };
   }
 
   // 激活
   var data = loadData();
   if (!data._usedCodes) data._usedCodes = [];
   data._usedCodes.push(cleanCode);
+  if (!data._codePhoneMap) data._codePhoneMap = {};
+  data._codePhoneMap[cleanCode] = currentPhone;
   if (!data.practitioner) data.practitioner = { activated: false, activationCode: "", activatedDate: "", avatar: "", icon: "default" };
   data.practitioner.activated = true;
   data.practitioner.activationCode = cleanCode;
   data.practitioner.activatedDate = getTodayStr();
+  data.practitioner.boundPhone = currentPhone;
   saveData(data);
 
-  return { success: true, msg: "践行者模块已激活！专属主题和功能已解锁" };
+  return { success: true, msg: "践行者模块已激活！已绑定手机号 " + currentPhone };
 }
 
 /**
  * 检查践行者是否已激活
+ * 激活码与手机号绑定：换手机号后需重新激活
  */
 function isPractitionerActivated() {
   var data = loadData();
-  return data.practitioner && data.practitioner.activated;
+  if (!data.practitioner || !data.practitioner.activated) return false;
+
+  // 检查绑定的手机号是否匹配
+  var boundPhone = data.practitioner.boundPhone || "";
+  var currentPhone = getPhone();
+
+  // 如果有绑定手机号，且当前手机号不匹配，则未激活
+  if (boundPhone && currentPhone && boundPhone !== currentPhone) {
+    return false;
+  }
+
+  return true;
 }
 
 /* ========================================
@@ -788,6 +844,24 @@ function deleteNoComplaintChallenge(cid) {
   var data = loadData();
   if (!data.noComplaint) return;
   data.noComplaint.challenges = data.noComplaint.challenges.filter(function(c) { return c.id !== cid; });
+  saveData(data);
+}
+
+/**
+ * 更新不抱怨挑战（编辑）
+ */
+function updateNoComplaintChallenge(cid, name, targetDays, note, signature) {
+  var data = loadData();
+  if (!data.noComplaint) return;
+  for (var i = 0; i < data.noComplaint.challenges.length; i++) {
+    if (data.noComplaint.challenges[i].id === cid) {
+      data.noComplaint.challenges[i].name = name;
+      data.noComplaint.challenges[i].targetDays = parseInt(targetDays) || 21;
+      data.noComplaint.challenges[i].note = note || "";
+      data.noComplaint.challenges[i].signature = signature || "";
+      break;
+    }
+  }
   saveData(data);
 }
 
@@ -958,6 +1032,25 @@ function deleteMomentBook(type, bid) {
   saveData(data);
 }
 
+/**
+ * 更新时刻书（编辑）
+ */
+function updateMomentBook(type, bid, name, prompt, reminderTime, signature) {
+  var data = loadData();
+  var key = _getMomentBookKey(type);
+  if (!data[key]) return;
+  for (var i = 0; i < data[key].books.length; i++) {
+    if (data[key].books[i].id === bid) {
+      data[key].books[i].name = name;
+      data[key].books[i].prompt = prompt || "";
+      data[key].books[i].reminderTime = reminderTime || "";
+      data[key].books[i].signature = signature || "";
+      break;
+    }
+  }
+  saveData(data);
+}
+
 /* ========================================
    连续打卡跟踪（践行者）
    ======================================== */
@@ -1043,6 +1136,23 @@ function deleteSunshineEntry(eid) {
   var data = loadData();
   if (!data.sunshine) return;
   data.sunshine.entries = data.sunshine.entries.filter(function(e) { return e.id !== eid; });
+  saveData(data);
+}
+
+/**
+ * 更新阳光雨露（编辑）
+ */
+function updateSunshineEntry(eid, name, content, action) {
+  var data = loadData();
+  if (!data.sunshine) return;
+  for (var i = 0; i < data.sunshine.entries.length; i++) {
+    if (data.sunshine.entries[i].id === eid) {
+      data.sunshine.entries[i].name = name;
+      data.sunshine.entries[i].content = content || "";
+      data.sunshine.entries[i].action = action || "";
+      break;
+    }
+  }
   saveData(data);
 }
 

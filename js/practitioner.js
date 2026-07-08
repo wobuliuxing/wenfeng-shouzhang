@@ -493,6 +493,7 @@ function showSunshineDetail(eid) {
 
   html += '<div style="display:flex;gap:10px;margin:16px">';
   html += '<button class="btn-primary" id="sun-checkin-quick" style="flex:1;min-height:40px">今日记录</button>';
+  html += '<button class="btn-secondary" id="sun-edit" style="flex:1;min-height:40px">编辑</button>';
   html += '<button class="btn-danger" id="sun-delete" style="flex:1;min-height:40px">删除</button>';
   html += '</div>';
 
@@ -519,6 +520,12 @@ function showSunshineDetail(eid) {
       setTimeout(function() { showSunshineDetail(eid); }, 100);
     });
 
+    var editBtn = pageEl.querySelector("#sun-edit");
+    if (editBtn) editBtn.addEventListener("click", function() {
+      hidePage();
+      setTimeout(function() { showEditSunshineForm(eid); }, 100);
+    });
+
     var delBtn = pageEl.querySelector("#sun-delete");
     if (delBtn) delBtn.addEventListener("click", function() {
       hidePage();
@@ -541,6 +548,58 @@ function showSunshineDetail(eid) {
         var recordsEl = pageEl.querySelector("#sun-records");
         if (recordsEl) recordsEl.innerHTML = _renderSunshineRecords(entry, period);
       });
+    });
+  }, 50);
+}
+
+/**
+ * 编辑阳光雨露表单
+ */
+function showEditSunshineForm(eid) {
+  var entry = getSunshineEntry(eid);
+  if (!entry) { showToast("不存在"); return; }
+
+  var html = '<div class="form-page">';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="esun-name">阳光雨露的名字</label>';
+  html += '<input class="form-input" id="esun-name" type="text" value="' + (entry.name || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="esun-content">具体的内容</label>';
+  html += '<textarea class="form-input form-textarea" id="esun-content">' + (entry.content || "") + '</textarea>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="esun-action">知道后，我以后要怎么做</label>';
+  html += '<textarea class="form-input form-textarea" id="esun-action">' + (entry.action || "") + '</textarea>';
+  html += '</div>';
+
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="esun-save" style="flex:1;min-height:44px">保存修改</button>';
+  html += '</div>';
+
+  html += '</div>';
+
+  showPage("编辑阳光雨露", html);
+
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (!topPage) return;
+  var pageEl = topPage.el;
+
+  setTimeout(function() {
+    var saveBtn = pageEl.querySelector("#esun-save");
+    if (saveBtn) saveBtn.addEventListener("click", function() {
+      var name = pageEl.querySelector("#esun-name").value.trim();
+      if (!name) { showToast("请填写阳光雨露的名字"); return; }
+      var content = pageEl.querySelector("#esun-content").value.trim();
+      var action = pageEl.querySelector("#esun-action").value.trim();
+
+      updateSunshineEntry(eid, name, content, action);
+      showToast("阳光雨露已更新");
+      hidePage();
+      setTimeout(function() { showSunshineModule(); }, 100);
     });
   }, 50);
 }
@@ -795,15 +854,15 @@ function showMomentBookDetail(type, bid) {
   var config = MOMENT_BOOK_CONFIG[type];
   var html = '<div class="omb-detail">';
 
+  // 顶栏已经是"目标名 - 记录"，所以详情里只显示副信息（不再重复显示名字）
   html += '<div class="omb-detail-header">';
-  html += '<h3>' + config.name + '：' + book.name + '</h3>';
   if (book.prompt) {
-    html += '<p style="color:#999;font-size:13px">为什么：' + book.prompt + '</p>';
+    html += '<p style="color:var(--text-secondary);font-size:14px;line-height:1.6">为什么：' + book.prompt + '</p>';
   }
   if (book.signature) {
-    html += '<p>签名：「' + book.signature + '」</p>';
+    html += '<p style="color:var(--text-hint);font-size:13px">签名：「' + book.signature + '」</p>';
   }
-  html += '<p>共 ' + book.records.length + ' 条记录</p>';
+  html += '<p style="color:var(--text-hint);font-size:12px;margin-top:4px">共 ' + book.records.length + ' 条记录</p>';
   html += '</div>';
 
   html += '<div class="nc-period-selector">';
@@ -818,12 +877,13 @@ function showMomentBookDetail(type, bid) {
   html += '</div>';
 
   html += '<div style="display:flex;gap:10px;margin:16px">';
+  html += '<button class="btn-secondary" id="mb-edit" style="flex:1;min-height:40px">编辑</button>';
   html += '<button class="btn-danger" id="mb-delete" style="flex:1;min-height:40px">删除此' + config.name + '</button>';
   html += '</div>';
 
   html += '</div>';
 
-  showPage(book.name + " - 记录", html);
+  showPage(config.name + " - 记录", html);
 
   var topPage = _pageStack[_pageStack.length - 1];
   if (!topPage) return;
@@ -841,6 +901,12 @@ function showMomentBookDetail(type, bid) {
       });
     });
 
+    var editBtn = pageEl.querySelector("#mb-edit");
+    if (editBtn) editBtn.addEventListener("click", function() {
+      hidePage();
+      setTimeout(function() { showEditMomentBookForm(type, bid); }, 100);
+    });
+
     var delBtn = pageEl.querySelector("#mb-delete");
     if (delBtn) delBtn.addEventListener("click", function() {
       hidePage();
@@ -852,6 +918,73 @@ function showMomentBookDetail(type, bid) {
           setTimeout(function() { showMomentBookModule(); }, 100);
         }, true);
       }, 100);
+    });
+  }, 50);
+}
+
+/**
+ * 编辑时刻书表单
+ */
+function showEditMomentBookForm(type, bid) {
+  var book = getMomentBook(type, bid);
+  if (!book) { showToast("不存在"); return; }
+
+  var config = MOMENT_BOOK_CONFIG[type];
+
+  var html = '<div class="form-page">';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="emb-name">目标名字</label>';
+  html += '<textarea class="form-input form-textarea" id="emb-name">' + (book.name || "") + '</textarea>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="emb-prompt">为什么要达成这个目标</label>';
+  html += '<textarea class="form-input form-textarea" id="emb-prompt">' + (book.prompt || "") + '</textarea>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="emb-time">提醒时间（可选）</label>';
+  html += '<select class="form-select" id="emb-time">';
+  html += '<option value="">不提醒</option>';
+  for (var h = 0; h < 24; h++) {
+    var v = pad(h) + ":00";
+    var sel = (book.reminderTime === v) ? " selected" : "";
+    html += '<option value="' + v + '"' + sel + '>' + v + '</option>';
+  }
+  html += '</select>';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="emb-sig">自定义签名（可选）</label>';
+  html += '<input class="form-input" id="emb-sig" type="text" value="' + (book.signature || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-actions">';
+  html += '<button class="btn-primary" id="emb-save" style="flex:1;min-height:44px">保存修改</button>';
+  html += '</div>';
+
+  html += '</div>';
+
+  showPage("编辑" + config.name, html);
+
+  var topPage = _pageStack[_pageStack.length - 1];
+  if (!topPage) return;
+  var pageEl = topPage.el;
+
+  setTimeout(function() {
+    var saveBtn = pageEl.querySelector("#emb-save");
+    if (saveBtn) saveBtn.addEventListener("click", function() {
+      var name = pageEl.querySelector("#emb-name").value.trim();
+      if (!name) { showToast("请填写目标名字"); return; }
+      var prompt = pageEl.querySelector("#emb-prompt").value.trim();
+      var time = pageEl.querySelector("#emb-time").value;
+      var sig = pageEl.querySelector("#emb-sig").value.trim();
+
+      updateMomentBook(type, bid, name, prompt, time, sig);
+      showToast(config.name + "已更新");
+      hidePage();
+      setTimeout(function() { showMomentBookModule(); }, 100);
     });
   }, 50);
 }
