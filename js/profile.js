@@ -82,7 +82,7 @@ function renderProfilePage() {
 
   // 关于
   var aboutSection = createEl("div", "profile-section");
-  var itemAbout = makeSettingItem("关于籽芽手账", "v4.1.0", function() {
+  var itemAbout = makeSettingItem("关于籽芽手账", "v5.0.0", function() {
     showAbout();
   });
   aboutSection.appendChild(itemAbout);
@@ -96,7 +96,18 @@ function renderProfilePage() {
  */
 function showSettingsMenu() {
   var syncOn = getCloudSyncEnabled();
-  var phone = getPhone();
+  var configured = isCloudConfigured();
+  var lastSync = getLastSyncTime();
+  var syncStatus = "未配置";
+  if (configured) {
+    syncStatus = syncOn ? "已开启" : "已关闭";
+    if (lastSync) {
+      try {
+        var dt = new Date(lastSync);
+        syncStatus += "（上次：" + dt.getMonth()+1 + "月" + dt.getDate() + "日 " + dt.getHours() + ":" + (dt.getMinutes()<10?"0":"") + dt.getMinutes() + "）";
+      } catch(e) {}
+    }
+  }
 
   var html = '<div class="settings-list">';
 
@@ -107,31 +118,31 @@ function showSettingsMenu() {
   html += '<span class="si-arrow">\u203a</span>';
   html += '</div>';
 
-  // 2) 多端云同步（开关）
+  // 2) 云端同步设置
+  html += '<div class="setting-item" role="button" tabindex="0" id="set-cloud-config">';
+  html += '<span class="si-label">云端同步设置</span>';
+  html += '<span class="si-value">' + (configured ? "已配置" : "未配置") + '</span>';
+  html += '<span class="si-arrow">\u203a</span>';
+  html += '</div>';
+
+  // 3) 自动同步开关
   html += '<div class="setting-item" role="button" tabindex="0" id="set-sync">';
-  html += '<span class="si-label">多端云同步</span>';
+  html += '<span class="si-label">自动同步（10分钟）</span>';
   html += '<span class="si-value">' + (syncOn ? "已开启" : "已关闭") + '</span>';
   html += '<span class="si-arrow">\u203a</span>';
   html += '</div>';
 
-  // 3) 云同步手机号（紧跟在多端云同步下面）
-  html += '<div class="setting-item" role="button" tabindex="0" id="set-phone">';
-  html += '<span class="si-label">云同步手机号</span>';
-  html += '<span class="si-value">' + (phone || "未设置") + '</span>';
+  // 4) 立即备份同步
+  html += '<div class="setting-item" role="button" tabindex="0" id="set-sync-now">';
+  html += '<span class="si-label">立即备份同步</span>';
+  html += '<span class="si-value">' + (configured ? "点击同步" : "需先配置") + '</span>';
   html += '<span class="si-arrow">\u203a</span>';
   html += '</div>';
 
-  // 4) 手动从云端恢复
+  // 5) 云端数据恢复
   html += '<div class="setting-item" role="button" tabindex="0" id="set-download">';
-  html += '<span class="si-label">从云端恢复数据</span>';
-  html += '<span class="si-value">手动下载</span>';
-  html += '<span class="si-arrow">\u203a</span>';
-  html += '</div>';
-
-  // 5) 排行榜
-  html += '<div class="setting-item" role="button" tabindex="0" id="set-lb-view">';
-  html += '<span class="si-label">打卡排行榜</span>';
-  html += '<span class="si-value">每日0点刷新</span>';
+  html += '<span class="si-label">云端数据恢复</span>';
+  html += '<span class="si-value">覆盖本地</span>';
   html += '<span class="si-arrow">\u203a</span>';
   html += '</div>';
 
@@ -144,11 +155,11 @@ function showSettingsMenu() {
   var pageEl = topPage.el;
 
   setTimeout(function() {
-    var phoneItem = pageEl.querySelector("#set-phone");
-    if (phoneItem) phoneItem.addEventListener("click", function() { showPhoneSetting(); });
-
     var backupItem = pageEl.querySelector("#set-backup");
     if (backupItem) backupItem.addEventListener("click", function() { showBackupMenu(); });
+
+    var cloudConfigItem = pageEl.querySelector("#set-cloud-config");
+    if (cloudConfigItem) cloudConfigItem.addEventListener("click", function() { showCloudSyncSettings(); });
 
     var syncItem = pageEl.querySelector("#set-sync");
     if (syncItem) syncItem.addEventListener("click", function() {
@@ -156,143 +167,166 @@ function showSettingsMenu() {
       syncItem.querySelector(".si-value").textContent = getCloudSyncEnabled() ? "已开启" : "已关闭";
     });
 
-    var downloadItem = pageEl.querySelector("#set-download");
-    if (downloadItem) downloadItem.addEventListener("click", function() { showCloudDownload(); });
-
-    var lbView = pageEl.querySelector("#set-lb-view");
-    if (lbView) lbView.addEventListener("click", function() {
-      showLeaderboard();
+    var syncNowItem = pageEl.querySelector("#set-sync-now");
+    if (syncNowItem) syncNowItem.addEventListener("click", function() {
+      if (!isCloudConfigured()) {
+        showToast("请先配置云端同步设置");
+        return;
+      }
+      showToast("正在同步...");
+      doManualSync(function() {});
     });
+
+    var downloadItem = pageEl.querySelector("#set-download");
+    if (downloadItem) downloadItem.addEventListener("click", function() { showCloudRestore(); });
   }, 50);
 }
 
 /**
- * 云同步手机号设置
+ * 云端同步设置页面
  */
-function showPhoneSetting() {
-  var phone = getPhone();
+function showCloudSyncSettings() {
+  var config = loadCloudConfig();
 
   var html = '<div class="form-page">';
-  html += '<p style="font-size:13px;color:#999;margin-bottom:12px;text-align:center">手机号是云同步的唯一标识，设置后可在其他设备通过手机号恢复数据。</p>';
+  html += '<p style="font-size:13px;color:#999;margin-bottom:12px;text-align:center;line-height:1.6">配置中科院数据胶囊 S3 接口地址。<br>上传地址用于 PUT 上传，下载地址用于 GET 下载。<br>与电脑版使用相同的接口地址即可跨端同步。</p>';
 
   html += '<div class="form-group">';
-  html += '<label class="form-label" for="ps-phone">手机号</label>';
-  html += '<input class="form-input" id="ps-phone" type="tel" placeholder="请输入手机号" value="' + phone + '" maxlength="11">';
+  html += '<label class="form-label" for="cs-upload">上传接口地址（PUT）</label>';
+  html += '<input class="form-input" id="cs-upload" type="url" placeholder="https://..." value="' + (config.upload_url || "") + '">';
   html += '</div>';
 
-  html += '<div class="form-actions">';
-  html += '<button class="btn-primary" id="ps-save" style="flex:1;min-height:44px">保存</button>';
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="cs-download">下载直链地址（GET）</label>';
+  html += '<input class="form-input" id="cs-download" type="url" placeholder="https://..." value="' + (config.download_url || "") + '">';
   html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="cs-interval">自动同步间隔（分钟）</label>';
+  html += '<input class="form-input" id="cs-interval" type="number" min="1" max="60" value="' + (config.interval_minutes || 10) + '">';
+  html += '</div>';
+
+  html += '<div style="display:flex;gap:8px;margin-top:16px">';
+  html += '<button class="btn-secondary" id="cs-test" style="flex:1;min-height:44px">检测接口</button>';
+  html += '<button class="btn-primary" id="cs-save" style="flex:1;min-height:44px">保存配置</button>';
+  html += '</div>';
+
+  html += '<div id="cs-test-result" style="margin-top:12px;font-size:13px;line-height:1.6"></div>';
 
   html += '</div>';
 
-  showPage("云同步手机号", html);
+  showPage("云端同步设置", html);
 
   var topPage = _pageStack[_pageStack.length - 1];
   if (!topPage) return;
   var pageEl = topPage.el;
 
   setTimeout(function() {
-    var saveBtn = pageEl.querySelector("#ps-save");
+    var saveBtn = pageEl.querySelector("#cs-save");
     if (saveBtn) saveBtn.addEventListener("click", function() {
-      var p = pageEl.querySelector("#ps-phone").value.trim();
-      if (!p) { showToast("请输入手机号"); return; }
-      if (!/^1\d{10}$/.test(p)) { showToast("请输入正确的手机号"); return; }
-      setPhone(p);
-      showToast("手机号已保存");
+      var uploadUrl = pageEl.querySelector("#cs-upload").value.trim();
+      var downloadUrl = pageEl.querySelector("#cs-download").value.trim();
+      var interval = parseInt(pageEl.querySelector("#cs-interval").value) || 10;
+
+      if (!uploadUrl || !downloadUrl) {
+        showToast("请填写上传和下载地址");
+        return;
+      }
+
+      var newConfig = {
+        upload_url: uploadUrl,
+        download_url: downloadUrl,
+        auto_sync: config.auto_sync !== false,
+        interval_minutes: interval
+      };
+      saveCloudConfig(newConfig);
+
+      // 重启自动同步定时器
+      startAutoSyncTimer();
+
+      showToast("配置已保存，自动同步已启动");
       hidePage();
       renderProfilePage();
+    });
+
+    var testBtn = pageEl.querySelector("#cs-test");
+    if (testBtn) testBtn.addEventListener("click", function() {
+      var uploadUrl = pageEl.querySelector("#cs-upload").value.trim();
+      var downloadUrl = pageEl.querySelector("#cs-download").value.trim();
+      var resultEl = pageEl.querySelector("#cs-test-result");
+
+      if (!uploadUrl || !downloadUrl) {
+        resultEl.innerHTML = '<span style="color:#E64340">请先填写地址</span>';
+        return;
+      }
+
+      resultEl.innerHTML = '<span style="color:#999">正在检测...</span>';
+      var results = [];
+      var done = 0;
+
+      testUploadUrl(uploadUrl, function(ok, msg) {
+        results.push("上传：" + (ok ? "✓ " : "✗ ") + msg);
+        done++;
+        if (done === 2) {
+          resultEl.innerHTML = results.join("<br>");
+        }
+      });
+
+      testDownloadUrl(downloadUrl, function(ok, msg) {
+        results.push("下载：" + (ok ? "✓ " : "✗ ") + msg);
+        done++;
+        if (done === 2) {
+          resultEl.innerHTML = results.join("<br>");
+        }
+      });
     });
   }, 50);
 }
 
 /**
- * 手动从云端下载数据
+ * 云端数据恢复页面
  */
-function showCloudDownload() {
-  var phone = getPhone();
-  if (!phone) {
-    showToast("请先设置云同步手机号");
+function showCloudRestore() {
+  if (!isCloudConfigured()) {
+    showToast("请先在云端同步设置中配置接口地址");
     return;
   }
 
-  showPage("从云端恢复", '<div style="text-align:center;padding:20px;color:#999">正在从云端下载数据...</div>');
+  showPage("云端数据恢复", '<div class="confirm-page"><p class="confirm-message" style="text-align:center;padding:20px">正在从云端下载数据...</p></div>');
 
-  initCloudBase(function(err) {
-    if (err) {
-      _updateCloudDownloadPage("云服务连接失败：" + err.message);
-      return;
-    }
-
-    if (!_uid) {
-      cloudSignInAnonymously(function(loginErr) {
-        if (loginErr) {
-          _updateCloudDownloadPage("登录失败：" + loginErr.message);
-          return;
-        }
-        _doCloudDownload(phone);
-      });
-    } else {
-      _doCloudDownload(phone);
-    }
-  });
-}
-
-function _doCloudDownload(phone) {
-  cloudFindByPhone(phone, function(err, cloudData) {
-    if (err) {
-      _updateCloudDownloadPage("下载失败：" + err.message);
-      return;
-    }
-    if (!cloudData) {
-      _updateCloudDownloadPage("云端没有找到该手机号的数据");
-      return;
-    }
-
-    var cloudDate = cloudData.updatedAt ? new Date(cloudData.updatedAt).toLocaleString("zh-CN") : "未知时间";
-
-    var html = '<div class="confirm-page">';
-    html += '<p class="confirm-message">云端有一份备份数据（更新于 ' + cloudDate + '）。\n\n是否用云端数据覆盖本地？</p>';
-    html += '<div class="confirm-actions">';
-    html += '<button class="btn-secondary" id="cf-cancel" style="flex:1;min-height:44px">取消</button>';
-    html += '<button class="btn-primary" id="cf-overwrite" style="flex:1;min-height:44px">覆盖本地</button>';
-    html += '</div>';
-    html += '</div>';
-
-    _updateCloudDownloadPage(html);
-
+  restoreFromCloud(function(err, msg) {
     var topPage = _pageStack[_pageStack.length - 1];
-    if (!topPage) return;
+    if (!topPage) {
+      showToast(err ? "恢复失败：" + err.message : msg);
+      return;
+    }
     var pageEl = topPage.el;
 
-    setTimeout(function() {
-      var cancelBtn = pageEl.querySelector("#cf-cancel");
-      if (cancelBtn) cancelBtn.addEventListener("click", hidePage);
+    if (err) {
+      pageEl.querySelector(".page-body").innerHTML =
+        '<div class="confirm-page"><p class="confirm-message" style="color:#E64340;text-align:center">' + err.message + '</p>' +
+        '<div class="confirm-actions"><button class="btn-secondary" id="cr-back" style="flex:1;min-height:44px">返回</button></div></div>';
+      var backBtn = pageEl.querySelector("#cr-back");
+      if (backBtn) backBtn.addEventListener("click", hidePage);
+      return;
+    }
 
-      var overwriteBtn = pageEl.querySelector("#cf-overwrite");
-      if (overwriteBtn) overwriteBtn.addEventListener("click", function() {
-        if (cloudData.appData) saveData(cloudData.appData);
-        if (cloudData.books) localStorage.setItem("wenfeng_books", JSON.stringify(cloudData.books));
-        if (cloudData.bookProgress) localStorage.setItem("wenfeng_book_progress", cloudData.bookProgress);
-        if (cloudData.theme) {
-          setCurrentTheme(cloudData.theme.current || "default");
-          if (cloudData.theme.purchased) {
-            localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(cloudData.theme.purchased));
-          }
-        }
-        hidePage();
-        initTheme();
-        updateQuoteBar();
-        switchTab("checkin");
-        showToast("已从云端恢复数据");
-      });
-    }, 50);
+    pageEl.querySelector(".page-body").innerHTML =
+      '<div class="confirm-page">' +
+      '<p class="confirm-message" style="text-align:center;color:#07C160">' + msg + '</p>' +
+      '<p class="confirm-message" style="text-align:center;font-size:13px;color:#999">本地数据已被云端数据覆盖，点击下方按钮刷新页面。</p>' +
+      '<div class="confirm-actions"><button class="btn-primary" id="cr-ok" style="flex:1;min-height:44px">刷新页面</button></div>' +
+      '</div>';
+
+    var okBtn = pageEl.querySelector("#cr-ok");
+    if (okBtn) okBtn.addEventListener("click", function() {
+      hidePage();
+      initTheme();
+      updateQuoteBar();
+      renderProfilePage();
+      switchTab("checkin");
+    });
   });
-}
-
-function _updateCloudDownloadPage(html) {
-  var topPage = _pageStack[_pageStack.length - 1];
-  if (topPage) topPage.el.querySelector(".page-body").innerHTML = html;
 }
 
 function makeSettingItem(label, value, onClick) {
@@ -367,12 +401,9 @@ function showLoginRegister() {
       if (password.length < 4) { showToast("密码至少4个字符"); return; }
       var result = registerAccount(username, password, phone);
       if (result.ok) {
-        if (getCloudSyncEnabled()) {
-          initCloudBase(function() {
-            cloudSignUp(username, password, function() {
-              cloudUploadData(function() {});
-            });
-          });
+        // 注册成功后执行一次云同步
+        if (getCloudSyncEnabled() && isCloudConfigured()) {
+          doManualSync(function() {});
         }
         hidePage();
         renderProfilePage();
@@ -392,52 +423,34 @@ function showLoginRegister() {
 
       var result = loginAccount(username, password);
       if (result.ok) {
-        if (getCloudSyncEnabled()) {
-          initCloudBase(function() {
-            cloudSignIn(username, password, function() {
-              cloudCheckAndPrompt(function() {
-                renderProfilePage();
-                updateQuoteBar();
-                switchTab("checkin");
-              });
-            });
-          });
+        // 登录成功后执行一次云同步
+        if (getCloudSyncEnabled() && isCloudConfigured()) {
+          showToast("正在同步数据...");
+          doManualSync(function() {});
         }
         hidePage();
         renderProfilePage();
         updateQuoteBar();
         showToast("欢迎回来，" + username);
       } else if (result.msg === "尚未注册，请先注册" && phone) {
-        showToast("正在通过手机号查找云端账号...");
-        initCloudBase(function(err) {
-          if (err) { showToast("云服务连接失败"); return; }
-          cloudSignInAnonymously(function() {
-            cloudFindByPhone(phone, function(err, cloudData) {
-              if (err) { showToast("云端查找失败：" + err.message); return; }
-              if (!cloudData) {
-                showToast("该手机号未注册，请先注册");
-                return;
-              }
-              if (cloudData.appData) {
-                saveData(cloudData.appData);
-                setPhone(phone);
-              }
-              if (cloudData.books) localStorage.setItem("wenfeng_books", JSON.stringify(cloudData.books));
-              if (cloudData.bookProgress) localStorage.setItem("wenfeng_book_progress", cloudData.bookProgress);
-              if (cloudData.theme) {
-                setCurrentTheme(cloudData.theme.current || "default");
-                if (cloudData.theme.purchased) {
-                  localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(cloudData.theme.purchased));
-                }
-              }
-              hidePage();
-              initTheme();
-              updateQuoteBar();
-              renderProfilePage();
-              switchTab("checkin");
-              showToast("账号恢复成功！欢迎回来，" + (cloudData.username || username));
-            });
-          });
+        // 尝试从云端恢复数据
+        if (!isCloudConfigured()) {
+          showToast("该手机号本地未注册，且云端同步未配置");
+          return;
+        }
+        showToast("正在从云端查找数据...");
+        restoreFromCloud(function(err, msg) {
+          if (err) {
+            showToast("云端恢复失败：" + err.message);
+            return;
+          }
+          setPhone(phone);
+          hidePage();
+          initTheme();
+          updateQuoteBar();
+          renderProfilePage();
+          switchTab("checkin");
+          showToast("账号恢复成功！欢迎回来，" + username);
         });
       } else {
         showToast(result.msg);
@@ -744,50 +757,30 @@ function showAddDreamForm() {
 // ══════════════════════════════════════════════
 
 function getCloudSyncEnabled() {
-  var key = "wenfeng_cloud_sync";
-  return localStorage.getItem(key) === "true";
+  var config = loadCloudConfig();
+  return config.auto_sync !== false;
 }
 
 function setCloudSyncEnabled(on) {
-  localStorage.setItem("wenfeng_cloud_sync", on ? "true" : "false");
+  var config = loadCloudConfig();
+  config.auto_sync = on;
+  saveCloudConfig(config);
 }
 
 function toggleCloudSync() {
   var on = !getCloudSyncEnabled();
   setCloudSyncEnabled(on);
   if (on) {
-    showToast("多端云同步已开启，正在上传本地数据...");
-    initCloudBase(function(err) {
-      if (err) { showToast("云服务连接失败：" + err.message); return; }
-      cloudSignInAnonymously(function() {
-        cloudUploadData(function(e) {
-          if (e) { showToast("同步失败：" + e.message); return; }
-          showToast("同步完成！已备份：打卡记录、梦想币、书架、主题");
-        });
-      });
-    });
+    if (!isCloudConfigured()) {
+      showToast("自动同步已开启，请配置云端同步地址");
+    } else {
+      showToast("自动同步已开启（每10分钟）");
+      startAutoSyncTimer();
+    }
   } else {
-    showToast("多端云同步已关闭");
+    showToast("自动同步已关闭");
+    stopAutoSyncTimer();
   }
-  renderProfilePage();
-}
-
-function getLeaderboardEnabled() {
-  var key = "wenfeng_leaderboard";
-  return localStorage.getItem(key) === "true";
-}
-
-function setLeaderboardEnabled(on) {
-  localStorage.setItem("wenfeng_leaderboard", on ? "true" : "false");
-}
-
-function toggleLeaderboard() {
-  var on = !getLeaderboardEnabled();
-  setLeaderboardEnabled(on);
-  if (on) {
-    initCloudBase(function() {});
-  }
-  showToast("打卡排行榜已" + (on ? "开启" : "关闭"));
   renderProfilePage();
 }
 
@@ -1169,7 +1162,7 @@ function showBackupMenu() {
 
 function exportData() {
   var backup = {
-    version: "4.1.0",
+    version: "5.0.0",
     exportDate: new Date().toISOString(),
     appData: loadData(),
     // 只备份书名列表（不备份书本身内容，避免文件过大）
@@ -1181,8 +1174,7 @@ function exportData() {
       purchased: getPurchasedThemes()
     },
     cloudSettings: {
-      sync: getCloudSyncEnabled(),
-      leaderboard: getLeaderboardEnabled()
+      sync: getCloudSyncEnabled()
     }
   };
 
@@ -1211,6 +1203,8 @@ function exportData() {
       hidePage();
       // 备份成功提示（明示路径，方便用户查找）
       showToast("备份成功！已保存到手机：Documents/籽芽手账/" + fileName, 4000);
+      // 发送备份成功通知
+      _sendBackupSuccessNotification(fileName, "Documents/籽芽手账");
     }).catch(function(err) {
       // 降级到 DOWNLOADS
       Filesystem.mkdir({
@@ -1227,6 +1221,7 @@ function exportData() {
       }).then(function() {
         hidePage();
         showToast("备份成功！已保存到手机：Download/籽芽手账/" + fileName, 4000);
+        _sendBackupSuccessNotification(fileName, "Download/籽芽手账");
       }).catch(function(err2) {
         _downloadBackup(json, fileName);
       });
@@ -1388,7 +1383,6 @@ function importData(backup) {
     }
     if (backup.cloudSettings) {
       setCloudSyncEnabled(backup.cloudSettings.sync || false);
-      setLeaderboardEnabled(backup.cloudSettings.leaderboard || false);
     }
     hidePage();
     initTheme();
@@ -1404,7 +1398,7 @@ function importData(backup) {
 
 function showAbout() {
   var html = '<div style="padding:32px 16px;text-align:center">';
-  html += '<p style="font-size:16px;font-weight:600;margin-bottom:8px">籽芽手账 v4.1.0</p>';
+  html += '<p style="font-size:16px;font-weight:600;margin-bottom:8px">籽芽手账 v5.0.0</p>';
   html += '<p style="font-size:13px;color:var(--brand);margin-bottom:16px;line-height:1.6">种子发芽，你每一次打卡都是对目标种子的一次施肥</p>';
   html += '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:8px;line-height:1.8">每一天的坚持，都是送给未来的礼物。</p>';
   html += '<p style="font-size:14px;color:var(--text-secondary);margin-bottom:8px;line-height:1.8">小小的打卡，大大的改变。</p>';
@@ -1416,6 +1410,32 @@ function showAbout() {
   html += '</div>';
 
   showPage("关于籽芽手账", html);
+}
+
+/**
+ * 发送备份成功通知
+ * @param {string} fileName - 备份文件名
+ * @param {string} dirPath - 保存目录
+ */
+function _sendBackupSuccessNotification(fileName, dirPath) {
+  try {
+    if (typeof window.Capacitor !== "undefined" &&
+        window.Capacitor.Plugins &&
+        window.Capacitor.Plugins.LocalNotifications) {
+      var notif = window.Capacitor.Plugins.LocalNotifications;
+      notif.create([{
+        id: 8888,
+        title: "备份成功",
+        body: "数据已保存到 " + dirPath + "/" + fileName,
+        schedule: { at: new Date(Date.now() + 500) },
+        smallIcon: "ic_stat_icon",
+        sound: "default",
+        priority: 2
+      }]);
+    }
+  } catch (e) {
+    console.warn("发送备份通知失败:", e);
+  }
 }
 
 // ══════════════════════════════════════════════

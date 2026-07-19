@@ -401,6 +401,7 @@ function showNewTaskForm() {
     var sig = getVal("nf-signature").trim();
     addTask(name, freq, note, customDay, sig);
     refreshCheckinList();
+    if (typeof refreshNotifications === "function") refreshNotifications();
     showToast("任务「" + name + "」创建成功");
     hidePage();
   });
@@ -427,6 +428,7 @@ function handleCheckin(tid) {
     }
     refreshCheckinList();
     updateQuoteBar();
+    if (typeof refreshNotifications === "function") refreshNotifications();
 
     var newDreams = checkDreamCompletion();
     newDreams.forEach(function(dream) {
@@ -435,8 +437,8 @@ function handleCheckin(tid) {
       }, 500);
     });
 
-    if (getCloudSyncEnabled() && isCloudLoggedIn()) {
-      cloudUploadData(function(e) {
+    if (getCloudSyncEnabled() && isCloudConfigured()) {
+      fullSync(function(e) {
         if (!e) showToast("数据已自动同步到云端");
       });
     }
@@ -549,6 +551,7 @@ function confirmDeleteTask(tid, name) {
   showConfirm("确认删除", "确定删除任务「" + name + "」及所有打卡记录吗？此操作不可撤销。", "删除", function() {
     deleteTask(tid);
     refreshCheckinList();
+    if (typeof refreshNotifications === "function") refreshNotifications();
     showToast("任务「" + name + "」已删除");
   }, true);
 }

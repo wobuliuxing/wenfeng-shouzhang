@@ -6,5 +6,15 @@
   "android": {
     "allowMixedContent": true,
     "backgroundColor": "FFFFFFFF"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#07C160",
+      "sound": "default"
+    },
+    "Filesystem": {
+      "androidIsEncryptionEnabled": false
+    }
   }
 }

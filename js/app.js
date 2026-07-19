@@ -24,17 +24,15 @@ document.addEventListener("DOMContentLoaded", function() {
   updateQuoteBar();
   switchTab("checkin");
 
-  // 初始化 CloudBase（异步，不阻塞页面）
-  initCloudBase(function(err) {
-    if (err) { console.warn("CloudBase 初始化失败:", err); return; }
-    if (getCloudSyncEnabled() && isCloudLoggedIn()) {
-      cloudUploadData(function(e) {
-        if (!e) showToast("数据已同步到云端");
-      });
-    }
-    // 排行榜每日0点刷新：如果今天还没推送过，推送一次
-    _checkLeaderboardDailyRefresh();
-  });
+  // 初始化云同步（S3 方式，无需加载外部 SDK）
+  if (getCloudSyncEnabled() && isCloudConfigured()) {
+    // 首次打开时自动同步一次
+    fullSync(function(err, msg) {
+      if (!err) showToast("数据已自动同步到云端");
+    });
+    // 启动10分钟自动同步定时器
+    startAutoSyncTimer();
+  }
 
   // 检查梦想中心是否有新完成的梦想
   checkDreamCompletion();
@@ -42,6 +40,11 @@ document.addEventListener("DOMContentLoaded", function() {
   // 检查自动备份（每日0点后首次打开触发）
   if (typeof checkAutoBackup === "function") {
     checkAutoBackup();
+  }
+
+  // 初始化通知提醒
+  if (typeof initNotifications === "function") {
+    initNotifications();
   }
 
   // 选项卡点击
@@ -188,31 +191,6 @@ function closeReaderIfOpen() {
     if (!_isCapacitor()) {
       history.back();
     }
-  }
-}
-
-/**
- * 排行榜每日0点刷新检查
- * 如果今天还没推送过排行榜数据，则推送一次
- */
-function _checkLeaderboardDailyRefresh() {
-  var today = getTodayStr();
-  var lastPush = localStorage.getItem("wenfeng_lb_last_push") || "";
-  if (lastPush === today) return; // 今天已推送
-
-  // 匿名登录后推送
-  if (!_uid) {
-    cloudSignInAnonymously(function() {
-      if (_uid) {
-        cloudPushLeaderboard(getCoins(), getUsername(), function() {
-          localStorage.setItem("wenfeng_lb_last_push", today);
-        });
-      }
-    });
-  } else {
-    cloudPushLeaderboard(getCoins(), getUsername(), function() {
-      localStorage.setItem("wenfeng_lb_last_push", today);
-    });
   }
 }
 

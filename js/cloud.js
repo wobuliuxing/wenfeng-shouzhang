@@ -1,501 +1,719 @@
 /* ========================================
-   籽芽手账 - CloudBase 云同步 & 排行榜
-   以手机号为唯一标识，跨设备数据同步
+   籽芽手账 - S3 跨端云同步
+   适配中科院数据胶囊 S3 协议（PUT上传/GET下载）
+   替换原 CloudBase 方案，与电脑版 cloud_sync.py 逻辑一致
    ======================================== */
 
-var CLOUD_ENV_ID = "clockin-backup-d3gcy9a9t86d32ca3";
-var _app = null;
-var _auth = null;
-var _db = null;
-var _initialized = false;
-var _uid = null;
+/* ─── 配置键名 ─── */
+var CLOUD_CONFIG_KEY = "ziya_cloud_sync_config";
+var CLOUD_AUTO_SYNC_KEY = "ziya_cloud_auto_sync";
+var CLOUD_LAST_SYNC_KEY = "ziya_cloud_last_sync";
+var CLOUD_FILENAME = "ziya_backup.json";
+
+/* ─── 自动同步定时器 ─── */
+var _autoSyncTimer = null;
+var _syncInProgress = false;
+
+/* ========================================
+   配置管理
+   ======================================== */
 
 /**
- * 加载 CloudBase SDK 并初始化
+ * 加载云同步配置
  */
-function initCloudBase(callback) {
-  if (_initialized && _app) { callback(null); return; }
-
-  // 动态加载 SDK
-  var script = document.createElement("script");
-  script.src = "https://static.cloudbase.net/cloudbase-js-sdk/latest/cloudbase.full.js";
-  script.onload = function() {
-    try {
-      _app = cloudbase.init({
-        env: CLOUD_ENV_ID
-      });
-      _auth = _app.auth({ persistence: "local" });
-      _db = _app.database();
-      _initialized = true;
-      callback(null);
-    } catch (e) {
-      callback(e);
-    }
+function loadCloudConfig() {
+  try {
+    var raw = localStorage.getItem(CLOUD_CONFIG_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return {
+    upload_url: "",
+    download_url: "",
+    auto_sync: true,
+    interval_minutes: 10
   };
-  script.onerror = function() {
-    callback(new Error("CloudBase SDK 加载失败"));
-  };
-  document.head.appendChild(script);
 }
 
 /**
- * 获取当前登录用户的 UID
+ * 保存云同步配置
  */
-function getCloudUid() {
-  return _uid;
+function saveCloudConfig(config) {
+  localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(config));
 }
 
 /**
- * 匿名登录（免注册快速使用）
+ * 获取自动同步开关状态
  */
-function cloudSignInAnonymously(callback) {
-  if (!_initialized) return callback(new Error("未初始化"));
-  _auth.signInAnonymously().then(function(res) {
-    _uid = res.user.uid;
-    callback(null, res);
-  }).catch(function(e) {
-    callback(e);
-  });
+function getCloudSyncEnabled() {
+  var config = loadCloudConfig();
+  return config.auto_sync !== false;
 }
 
 /**
- * 用户名密码注册
+ * 设置自动同步开关
  */
-function cloudSignUp(username, password, callback) {
-  if (!_initialized) return callback(new Error("未初始化"));
-  _auth.signUp({
-    username: username,
-    password: password
-  }).then(function(res) {
-    _uid = res.user.uid;
-    callback(null, res);
-  }).catch(function(e) {
-    callback(e);
-  });
+function setCloudSyncEnabled(on) {
+  var config = loadCloudConfig();
+  config.auto_sync = on;
+  saveCloudConfig(config);
 }
 
 /**
- * 用户名密码登录
+ * 检查是否已配置
  */
-function cloudSignIn(username, password, callback) {
-  if (!_initialized) return callback(new Error("未初始化"));
-  _auth.signInWithPassword({
-    username: username,
-    password: password
-  }).then(function(res) {
-    _uid = res.user.uid;
-    callback(null, res);
-  }).catch(function(e) {
-    callback(e);
-  });
-}
-
-/**
- * 退出登录
- */
-function cloudSignOut(callback) {
-  if (!_initialized) { if (callback) callback(null); return; }
-  _auth.signOut().then(function() {
-    _uid = null;
-    if (callback) callback(null);
-  }).catch(function(e) {
-    if (callback) callback(e);
-  });
-}
-
-/**
- * 检查是否已登录
- */
-function isCloudLoggedIn() {
-  return !!_uid;
+function isCloudConfigured() {
+  var config = loadCloudConfig();
+  return !!(config.upload_url && config.download_url);
 }
 
 /* ========================================
-   数据同步（以手机号为唯一标识）
+   备份包生成（与电脑版兼容）
    ======================================== */
 
 /**
- * 上传本地数据到云端
- * 以手机号作为主键查找/创建记录
+ * 生成标准备份包
+ * 格式与电脑版 cloud_sync.py make_backup_bundle() 一致
  */
-function cloudUploadData(callback) {
-  if (!_db) return callback(new Error("数据库未初始化"));
+function makeBackupBundle() {
+  var data = loadData();
+  var books = {};
+  try {
+    books = JSON.parse(localStorage.getItem("wenfeng_book_progress") || "{}");
+  } catch (e) {}
 
-  var localData = loadData();
-  var books = getBooks();
-  var bookProgress = localStorage.getItem("wenfeng_book_progress") || "{}";
-  var themeLocal = {
-    current: getCurrentTheme(),
-    purchased: getPurchasedThemes()
+  return {
+    version: "12.0",
+    exportDate: new Date().toISOString(),
+    appData: data,
+    bookProgress: books,
+    theme: data.theme || "default",
+    customShortcuts: {}
   };
-  var phone = getPhone();
-  var username = getUsername();
-
-  // 以手机号为唯一标识；若没手机号则用 uid
-  var lookupKey = phone || _uid;
-  if (!lookupKey) return callback(new Error("未登录，请先登录"));
-
-  var uploadPayload = {
-    uid: _uid,
-    phone: phone,
-    username: username,
-    gender: getGender(),
-    age: getAge(),
-    appData: localData,
-    books: books,
-    bookProgress: bookProgress,
-    theme: themeLocal,
-    updatedAt: new Date().toISOString()
-  };
-
-  // 以手机号查找已有记录
-  var query = phone
-    ? _db.collection("user_data").where({ phone: phone })
-    : _db.collection("user_data").where({ uid: _uid });
-
-  query.get().then(function(res) {
-    if (res.data && res.data.length > 0) {
-      return _db.collection("user_data").doc(res.data[0]._id).set(uploadPayload);
-    } else {
-      return _db.collection("user_data").add(uploadPayload);
-    }
-  }).then(function() {
-    callback(null);
-  }).catch(function(e) {
-    callback(e);
-  });
-
-  // 同时更新排行榜
-  cloudPushLeaderboard(localData.coins, username, function() {});
-}
-
-/**
- * 从云端下载数据（以手机号查找）
- */
-function cloudDownloadData(callback) {
-  if (!_db) return callback(new Error("数据库未初始化"));
-
-  var phone = getPhone();
-  var query = phone
-    ? _db.collection("user_data").where({ phone: phone })
-    : _db.collection("user_data").where({ uid: _uid });
-
-  if (!phone && !_uid) return callback(new Error("未登录"));
-
-  query.get().then(function(res) {
-    if (!res.data || res.data.length === 0) {
-      return callback(null, null);
-    }
-    var cloudRecord = res.data[0];
-    callback(null, {
-      appData: cloudRecord.appData,
-      books: cloudRecord.books,
-      bookProgress: cloudRecord.bookProgress,
-      theme: cloudRecord.theme,
-      updatedAt: cloudRecord.updatedAt
-    });
-  }).catch(function(e) {
-    callback(e);
-  });
-}
-
-/**
- * 以手机号查找云端账号
- * 用于卸载重装后恢复账号
- */
-function cloudFindByPhone(phone, callback) {
-  if (!_db) return callback(new Error("数据库未初始化"));
-  if (!phone) return callback(new Error("请输入手机号"));
-
-  _db.collection("user_data").where({ phone: phone }).get().then(function(res) {
-    if (!res.data || res.data.length === 0) {
-      callback(null, null);
-    } else {
-      var record = res.data[0];
-      callback(null, {
-        username: record.username,
-        appData: record.appData,
-        books: record.books,
-        bookProgress: record.bookProgress,
-        theme: record.theme,
-        updatedAt: record.updatedAt
-      });
-    }
-  }).catch(function(e) {
-    callback(e);
-  });
-}
-
-/**
- * 同步：默认上传本地数据到云端
- */
-function cloudSync(callback) {
-  cloudUploadData(function(e) {
-    callback(e, "uploaded");
-  });
-}
-
-/**
- * 登录后检查云端是否有数据，提示用户是否覆盖本地
- */
-function cloudCheckAndPrompt(callback) {
-  cloudDownloadData(function(err, cloudData) {
-    if (err) { if (callback) callback(err); return; }
-
-    if (!cloudData || !cloudData.appData) {
-      cloudUploadData(function(e) {
-        if (callback) callback(e, "uploaded");
-      });
-      return;
-    }
-
-    var cloudDate = cloudData.updatedAt ? new Date(cloudData.updatedAt).toLocaleString("zh-CN") : "未知时间";
-
-    var html = '<div class="confirm-page">';
-    html += '<p class="confirm-message">云端有一份备份数据（更新于 ' + cloudDate + '）。\n\n是否用云端数据覆盖本地？\n选"保留本地"则上传当前数据到云端。</p>';
-    html += '<div class="confirm-actions">';
-    html += '<button class="btn-secondary" id="cf-keep" style="flex:1;min-height:44px">保留本地</button>';
-    html += '<button class="btn-primary" id="cf-overwrite" style="flex:1;min-height:44px">覆盖本地</button>';
-    html += '</div>';
-    html += '</div>';
-
-    showPage("云端数据发现", html);
-
-    var topPage = _pageStack[_pageStack.length - 1];
-    if (!topPage) return;
-    var pageEl = topPage.el;
-
-    setTimeout(function() {
-      var keepBtn = pageEl.querySelector("#cf-keep");
-      if (keepBtn) keepBtn.addEventListener("click", function() {
-        hidePage();
-        cloudUploadData(function(e) {
-          if (!e) showToast("本地数据已上传到云端");
-          if (callback) callback(e, "uploaded");
-        });
-      });
-
-      var overwriteBtn = pageEl.querySelector("#cf-overwrite");
-      if (overwriteBtn) overwriteBtn.addEventListener("click", function() {
-        if (cloudData.appData) saveData(cloudData.appData);
-        if (cloudData.books) localStorage.setItem("wenfeng_books", JSON.stringify(cloudData.books));
-        if (cloudData.bookProgress) localStorage.setItem("wenfeng_book_progress", cloudData.bookProgress);
-        if (cloudData.theme) {
-          setCurrentTheme(cloudData.theme.current || "default");
-          if (cloudData.theme.purchased) {
-            localStorage.setItem("wenfeng_purchased_themes", JSON.stringify(cloudData.theme.purchased));
-          }
-        }
-        hidePage();
-        initTheme();
-        updateQuoteBar();
-        switchTab("checkin");
-        showToast("已用云端数据覆盖本地");
-        if (callback) callback(null, "downloaded");
-      });
-    }, 50);
-  });
 }
 
 /* ========================================
-   打卡天数排行榜
+   数据合并核心逻辑
+   移植自电脑版 cloud_sync.py merge_data()
    ======================================== */
 
 /**
- * 推送排行榜数据
- * 以打卡天数为排名依据
+ * 合并打卡记录列表，按日期去重
+ * 记录可以是字符串("2026-07-10")或字典({"date":"2026-07-10", ...})
  */
-function cloudPushLeaderboard(coins, username, callback) {
-  if (!_db) return;
+function _mergeRecords(localRecs, cloudRecs) {
+  var merged = {};
 
-  var phone = getPhone();
-  var lookupKey = phone || _uid;
-  if (!lookupKey) return;
-
-  var displayName = username || "匿名用户";
-  var streak = getCurrentStreak();
-  var totalDays = getTotalCheckinDays();
-  var level = getUserLevel();
-
-  var entry = {
-    uid: _uid,
-    phone: phone,
-    username: displayName,
-    coins: coins,
-    streak: streak,
-    totalDays: totalDays,
-    level: level.level,
-    levelName: level.name,
-    updatedAt: new Date().toISOString()
-  };
-
-  var query = phone
-    ? _db.collection("leaderboard").where({ phone: phone })
-    : _db.collection("leaderboard").where({ uid: _uid });
-
-  query.get().then(function(res) {
-    if (res.data && res.data.length > 0) {
-      return _db.collection("leaderboard").doc(res.data[0]._id).set(entry);
-    } else {
-      return _db.collection("leaderboard").add(entry);
-    }
-  }).then(function() {
-    if (callback) callback(null);
-  }).catch(function(e) {
-    if (callback) callback(e);
-  });
-}
-
-/**
- * 获取排行榜前 N 名（按打卡天数降序）
- */
-function cloudFetchLeaderboard(limit, callback) {
-  if (!_db) return callback(new Error("数据库未初始化"));
-  limit = limit || 10;
-
-  _db.collection("leaderboard")
-    .orderBy("totalDays", "desc")
-    .limit(limit)
-    .get()
-    .then(function(res) {
-      callback(null, res.data || []);
-    })
-    .catch(function(e) {
-      callback(e);
-    });
-}
-
-/**
- * 获取当前用户在完整排行榜中的排名
- */
-function cloudFetchUserRank(callback) {
-  if (!_db) return callback(new Error("数据库未初始化"));
-
-  var phone = getPhone();
-  var lookupKey = phone || _uid;
-  if (!lookupKey) return callback(null, null);
-
-  // 先获取用户自己的数据
-  var query = phone
-    ? _db.collection("leaderboard").where({ phone: phone })
-    : _db.collection("leaderboard").where({ uid: _uid });
-
-  query.get().then(function(res) {
-    if (!res.data || res.data.length === 0) {
-      callback(null, null);
-      return;
-    }
-    var myData = res.data[0];
-    var myDays = myData.totalDays || 0;
-
-    // 统计比我高的有多少人
-    _db.collection("leaderboard")
-      .where("totalDays", ">", myDays)
-      .count()
-      .then(function(countRes) {
-        var rank = (countRes.total || 0) + 1;
-        callback(null, { rank: rank, data: myData });
-      })
-      .catch(function(e) {
-        callback(e);
-      });
-  }).catch(function(e) {
-    callback(e);
-  });
-}
-
-/**
- * 显示排行榜（页面，列表格式）
- * 默认前10名，最上方显示当前用户排名
- */
-function showLeaderboard() {
-  showPage("打卡排行榜", '<div style="text-align:center;padding:20px;color:#999">正在加载排行榜...</div>');
-
-  // 先确保云服务初始化 + 匿名登录
-  initCloudBase(function(initErr) {
-    if (initErr) {
-      _renderLeaderboardError("云服务连接失败：" + initErr.message);
-      return;
-    }
-
-    // 匿名登录
-    if (!_uid) {
-      cloudSignInAnonymously(function(loginErr) {
-        if (loginErr) {
-          _renderLeaderboardError("登录失败：" + loginErr.message);
-          return;
+  // 先放本地
+  for (var i = 0; i < localRecs.length; i++) {
+    var r = localRecs[i];
+    if (typeof r === "string") {
+      merged[r] = r;
+    } else if (r && typeof r === "object") {
+      var key = r.date || String(r);
+      var existing = merged[key];
+      if (existing === undefined) {
+        merged[key] = r;
+      } else if (typeof existing === "string") {
+        merged[key] = r; // dict 比 string 信息更丰富
+      } else if (existing && typeof existing === "object") {
+        var subKey = r.count || 0;
+        var exCount = existing.count || 0;
+        if (subKey > exCount) {
+          merged[key] = r;
         }
-        _fetchAndRenderLeaderboard();
-      });
-    } else {
-      _fetchAndRenderLeaderboard();
+      }
     }
-  });
-}
-
-function _renderLeaderboardError(msg) {
-  var topPage = _pageStack[_pageStack.length - 1];
-  if (topPage) topPage.el.querySelector(".page-body").innerHTML =
-    '<p style="color:#E64340;text-align:center;padding:20px">' + msg + '</p>';
-}
-
-function _fetchAndRenderLeaderboard() {
-  var leaderboardData = null;
-  var userRankData = null;
-  var completed = 0;
-
-  function renderLb() {
-    completed++;
-    if (completed < 2) return;
-
-    var topPage = _pageStack[_pageStack.length - 1];
-    if (!topPage) return;
-    var pageEl = topPage.el;
-
-    var html = '<div class="leaderboard-page">';
-
-    // 顶部：当前用户排名
-    if (userRankData && userRankData.data) {
-      html += '<div class="lb-my-rank">';
-      html += '<div class="lb-my-rank-label">我的排名</div>';
-      html += '<div class="lb-my-rank-num">第 ' + userRankData.rank + ' 名</div>';
-      html += '<div class="lb-my-rank-info">' + (userRankData.data.username || "我") + " | 打卡 " + (userRankData.data.totalDays || 0) + " 天</div>";
-      html += '</div>';
-    } else {
-      html += '<div class="lb-no-rank">暂无你的排名数据，打卡后再来看看吧</div>';
-    }
-
-    // 前10名列表
-    html += '<div class="lb-list">';
-    if (leaderboardData && leaderboardData.length > 0) {
-      leaderboardData.forEach(function(entry, i) {
-        var isMe = (entry.phone && getPhone() && entry.phone === getPhone()) ||
-                   (entry.uid === _uid && !getPhone());
-        html += '<div class="lb-item' + (isMe ? ' lb-item-me' : '') + '">';
-        html += '<span class="lb-rank">第' + (i + 1) + '名</span>';
-        html += '<span class="lb-name">' + (entry.username || "匿名用户") + (isMe ? ' (我)' : '') + '</span>';
-        html += '<span class="lb-days">' + (entry.totalDays || 0) + ' 天</span>';
-        html += '</div>';
-      });
-    } else {
-      html += '<div style="text-align:center;padding:20px;color:#999">暂无排行榜数据</div>';
-    }
-    html += '</div>';
-
-    html += '</div>';
-
-    pageEl.querySelector(".page-body").innerHTML = html;
   }
 
-  cloudFetchLeaderboard(10, function(err, data) {
-    if (err) { _renderLeaderboardError("排行榜加载失败：" + err.message); return; }
-    leaderboardData = data;
-    renderLb();
-  });
+  // 再合并云端
+  for (var j = 0; j < cloudRecs.length; j++) {
+    var r2 = cloudRecs[j];
+    if (typeof r2 === "string") {
+      if (!merged[r2]) {
+        merged[r2] = r2;
+      }
+    } else if (r2 && typeof r2 === "object") {
+      var key2 = r2.date || String(r2);
+      var existing2 = merged[key2];
+      if (existing2 === undefined) {
+        merged[key2] = r2;
+      } else if (typeof existing2 === "string") {
+        merged[key2] = r2;
+      } else if (existing2 && typeof existing2 === "object") {
+        var exCount2 = existing2.count || 0;
+        var rCount2 = r2.count || 0;
+        // 时刻书可能有多条同日期记录（不同时间），用 time 做子键区分
+        if (r2.time || existing2.time) {
+          var rTime = r2.time || "";
+          var exTime = existing2.time || "";
+          if (rTime && rTime !== exTime) {
+            var compositeKey = key2 + "|" + rTime;
+            if (!merged[compositeKey]) {
+              merged[compositeKey] = r2;
+            }
+          } else if (rCount2 > exCount2) {
+            merged[key2] = r2;
+          }
+        } else if (rCount2 > exCount2) {
+          merged[key2] = r2;
+        }
+      }
+    }
+  }
 
-  cloudFetchUserRank(function(err, data) {
-    if (err) { userRankData = null; }
-    else { userRankData = data; }
-    renderLb();
+  // 还原为列表
+  var result = [];
+  for (var k in merged) {
+    if (merged.hasOwnProperty(k)) {
+      result.push(merged[k]);
+    }
+  }
+  return result;
+}
+
+/**
+ * 按 ID 合并两个列表
+ * 同 ID 的项目合并内部字段，records 字段特殊处理
+ */
+function _mergeListById(localList, cloudList) {
+  var result = {};
+
+  // 先放本地
+  for (var i = 0; i < localList.length; i++) {
+    var item = localList[i];
+    if (item && typeof item === "object" && item.id) {
+      result[item.id] = _cloneObj(item);
+    } else {
+      result[String(item)] = (item && typeof item === "object") ? _cloneObj(item) : item;
+    }
+  }
+
+  // 再合并云端
+  for (var j = 0; j < cloudList.length; j++) {
+    var cItem = cloudList[j];
+    if (cItem && typeof cItem === "object" && cItem.id) {
+      var iid = cItem.id;
+      if (result[iid] && typeof result[iid] === "object") {
+        var existing = result[iid];
+        // 合并 records
+        if (cItem.records && existing.records) {
+          existing.records = _mergeRecords(
+            existing.records || [],
+            cItem.records || []
+          );
+        }
+        // 其他字段：云端值优先（如果云端有非空值且本地为空）
+        for (var k in cItem) {
+          if (k === "records") continue;
+          if (cItem[k] && !existing[k]) {
+            existing[k] = cItem[k];
+          }
+          if (!(k in existing)) {
+            existing[k] = cItem[k];
+          }
+        }
+      } else {
+        result[iid] = _cloneObj(cItem);
+      }
+    } else {
+      var key = String(cItem);
+      if (!result[key]) {
+        result[key] = (cItem && typeof cItem === "object") ? _cloneObj(cItem) : cItem;
+      }
+    }
+  }
+
+  var list = [];
+  for (var id in result) {
+    if (result.hasOwnProperty(id)) {
+      list.push(result[id]);
+    }
+  }
+  return list;
+}
+
+/**
+ * 深拷贝简单对象
+ */
+function _cloneObj(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * 合并本地数据和云端数据
+ * 移植自 cloud_sync.py merge_data()
+ */
+function mergeData(localData, cloudData) {
+  if (!localData) return cloudData;
+  if (!cloudData) return localData;
+
+  var merged = _cloneObj(localData);
+
+  // ── 合并 tasks（按 ID）──
+  merged.tasks = _mergeListById(
+    localData.tasks || [],
+    cloudData.tasks || []
+  );
+
+  // ── 合并 noComplaint.challenges（按 ID）──
+  var localNC = (localData.noComplaint || {}).challenges || [];
+  var cloudNC = (cloudData.noComplaint || {}).challenges || [];
+  if (!merged.noComplaint) merged.noComplaint = {};
+  merged.noComplaint.challenges = _mergeListById(localNC, cloudNC);
+
+  // ── 合并 时刻书（one/three/six，按 ID）──
+  var mbKeys = ["oneMomentBook", "threeMomentBook", "sixMomentBook"];
+  for (var mi = 0; mi < mbKeys.length; mi++) {
+    var mbKey = mbKeys[mi];
+    var localMB = (localData[mbKey] || {}).books || [];
+    var cloudMB = (cloudData[mbKey] || {}).books || [];
+    if (!merged[mbKey]) merged[mbKey] = {};
+    merged[mbKey].books = _mergeListById(localMB, cloudMB);
+  }
+
+  // ── 合并 阳光雨露 entries（按 ID）──
+  var localSun = (localData.sunshine || {}).entries || [];
+  var cloudSun = (cloudData.sunshine || {}).entries || [];
+  if (!merged.sunshine) merged.sunshine = {};
+  merged.sunshine.entries = _mergeListById(localSun, cloudSun);
+
+  // ── 合并 梦想（按 ID）──
+  merged.dreams = _mergeListById(
+    localData.dreams || [],
+    cloudData.dreams || []
+  );
+
+  // ── 合并 笔记（按 ID）──
+  merged.notes = _mergeListById(
+    localData.notes || [],
+    cloudData.notes || []
+  );
+
+  // ── 梦想币 & 连续天数：取较大值 ──
+  merged.coins = Math.max(localData.coins || 0, cloudData.coins || 0);
+  merged.currentStreak = Math.max(
+    localData.currentStreak || 0,
+    cloudData.currentStreak || 0
+  );
+
+  // lastCheckinDate 取较新的
+  var localLCD = localData.lastCheckinDate || "";
+  var cloudLCD = cloudData.lastCheckinDate || "";
+  if (localLCD && cloudLCD) {
+    merged.lastCheckinDate = localLCD > cloudLCD ? localLCD : cloudLCD;
+  } else {
+    merged.lastCheckinDate = localLCD || cloudLCD;
+  }
+
+  var localTCD = localData.todayCoinDate || "";
+  var cloudTCD = cloudData.todayCoinDate || "";
+  if (localTCD && cloudTCD) {
+    merged.todayCoinDate = localTCD > cloudTCD ? localTCD : cloudTCD;
+  } else {
+    merged.todayCoinDate = localTCD || cloudTCD;
+  }
+
+  // ── 践行者状态：任一端已激活则激活 ──
+  var localPrac = localData.practitioner || {};
+  var cloudPrac = cloudData.practitioner || {};
+  var mergedPrac = _cloneObj(localPrac);
+  if (cloudPrac.activated) {
+    mergedPrac.activated = true;
+    mergedPrac.activationCode = mergedPrac.activationCode || cloudPrac.activationCode || "";
+    mergedPrac.activatedDate = mergedPrac.activatedDate || cloudPrac.activatedDate || "";
+  }
+  merged.practitioner = mergedPrac;
+
+  // ── 已购主题：取并集 ──
+  var localThemes = localData.purchasedThemes || ["default"];
+  var cloudThemes = cloudData.purchasedThemes || ["default"];
+  var themeSet = {};
+  for (var t = 0; t < localThemes.length; t++) themeSet[localThemes[t]] = true;
+  for (var t2 = 0; t2 < cloudThemes.length; t2++) themeSet[cloudThemes[t2]] = true;
+  merged.purchasedThemes = Object.keys(themeSet);
+
+  // ── 主题：取本地（用户最近选择）──
+  merged.theme = localData.theme || cloudData.theme || "default";
+
+  // ── 账号信息：合并非空字段 ──
+  var localAcct = localData.account || {};
+  var cloudAcct = cloudData.account || {};
+  var mergedAcct = _cloneObj(localAcct);
+  for (var ak in cloudAcct) {
+    if (cloudAcct[ak] && !mergedAcct[ak]) {
+      mergedAcct[ak] = cloudAcct[ak];
+    }
+  }
+  merged.account = mergedAcct;
+
+  return merged;
+}
+
+/**
+ * 合并书籍进度数据
+ */
+function mergeBooks(localBooks, cloudBooks) {
+  if (!localBooks || typeof localBooks !== "object") localBooks = {};
+  if (!cloudBooks || typeof cloudBooks !== "object") cloudBooks = {};
+  var merged = _cloneObj(localBooks);
+  for (var bid in cloudBooks) {
+    if (!cloudBooks.hasOwnProperty(bid)) continue;
+    var book = cloudBooks[bid];
+    if (merged[bid]) {
+      var existing = merged[bid];
+      if (existing && typeof existing === "object" && book && typeof book === "object") {
+        for (var k in book) {
+          if (k === "content") {
+            if (String(book[k]).length > String(existing[k] || "").length) {
+              existing[k] = book[k];
+            }
+          } else if (k === "position") {
+            var exLine = parseInt(String(existing[k] || "0").split(/[.|]/)[0]) || 0;
+            var newLine = parseInt(String(book[k]).split(/[.|]/)[0]) || 0;
+            if (newLine > exLine) existing[k] = book[k];
+          } else if (book[k] && !existing[k]) {
+            existing[k] = book[k];
+          }
+        }
+      } else {
+        merged[bid] = book;
+      }
+    } else {
+      merged[bid] = book;
+    }
+  }
+  return merged;
+}
+
+/**
+ * 合并两个完整备份包
+ */
+function mergeBackupBundles(localBundle, cloudBundle) {
+  var localData = localBundle.appData || localBundle;
+  var cloudData = cloudBundle.appData || cloudBundle;
+  var mergedData = mergeData(localData, cloudData);
+
+  var localBooks = localBundle.bookProgress || {};
+  var cloudBooks = cloudBundle.bookProgress || {};
+  var mergedBooks = mergeBooks(localBooks, cloudBooks);
+
+  return {
+    version: "12.0",
+    exportDate: new Date().toISOString(),
+    appData: mergedData,
+    bookProgress: mergedBooks,
+    theme: mergedData.theme || "default",
+    customShortcuts: {}
+  };
+}
+
+/* ========================================
+   S3 上传/下载（XMLHttpRequest 实现）
+   ======================================== */
+
+/**
+ * 上传数据到云端 S3
+ * @param {string} uploadUrl - S3 PUT 接口地址
+ * @param {string} jsonData - JSON 字符串数据
+ * @param {function} callback - callback(err)
+ */
+function uploadToCloud(uploadUrl, jsonData, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("PUT", uploadUrl, true);
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
+
+  xhr.onload = function() {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      callback(null);
+    } else {
+      callback(new Error("上传失败 (HTTP " + xhr.status + ")"));
+    }
+  };
+
+  xhr.onerror = function() {
+    callback(new Error("上传失败：网络错误"));
+  };
+
+  xhr.ontimeout = function() {
+    callback(new Error("上传超时"));
+  };
+
+  xhr.timeout = 60000;
+  xhr.send(jsonData);
+}
+
+/**
+ * 从云端 S3 下载数据
+ * @param {string} downloadUrl - S3 GET 直链地址
+ * @param {function} callback - callback(err, data) data 为解析后的 JSON 对象
+ */
+function downloadFromCloud(downloadUrl, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", downloadUrl, true);
+
+  xhr.onload = function() {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try {
+        var data = JSON.parse(xhr.responseText);
+        callback(null, data);
+      } catch (e) {
+        callback(new Error("云端备份解析失败"));
+      }
+    } else if (xhr.status === 404) {
+      // 云端还没有文件
+      callback(null, null);
+    } else {
+      callback(new Error("下载失败 (HTTP " + xhr.status + ")"));
+    }
+  };
+
+  xhr.onerror = function() {
+    callback(new Error("下载失败：网络错误"));
+  };
+
+  xhr.ontimeout = function() {
+    callback(new Error("下载超时"));
+  };
+
+  xhr.timeout = 60000;
+  xhr.send();
+}
+
+/* ========================================
+   完整同步流程
+   ======================================== */
+
+/**
+ * 执行完整同步：下载云端 -> 合并本地 -> 上传覆盖
+ * @param {function} callback - callback(err, message)
+ */
+function fullSync(callback) {
+  if (_syncInProgress) {
+    if (callback) callback(null, "同步正在进行中");
+    return;
+  }
+  _syncInProgress = true;
+
+  var config = loadCloudConfig();
+  var uploadUrl = (config.upload_url || "").trim();
+  var downloadUrl = (config.download_url || "").trim();
+
+  if (!uploadUrl) {
+    _syncInProgress = false;
+    if (callback) callback(new Error("未配置上传接口地址"));
+    return;
+  }
+  if (!downloadUrl) {
+    _syncInProgress = false;
+    if (callback) callback(new Error("未配置下载直链地址"));
+    return;
+  }
+
+  // ── 第一步：下载云端备份 ──
+  downloadFromCloud(downloadUrl, function(dlErr, cloudBundle) {
+    if (dlErr) {
+      _syncInProgress = false;
+      if (callback) callback(dlErr);
+      return;
+    }
+
+    // 云端可能还没有文件
+    if (!cloudBundle) {
+      cloudBundle = { appData: {}, bookProgress: {}, version: "12.0" };
+    }
+
+    // ── 第二步：合并本地数据 ──
+    var localBundle = makeBackupBundle();
+    var mergedBundle = mergeBackupBundles(localBundle, cloudBundle);
+
+    // ── 第三步：保存合并后的数据到本地 ──
+    var mergedData = mergedBundle.appData || {};
+    saveData(mergedData);
+    if (mergedBundle.bookProgress) {
+      localStorage.setItem("wenfeng_book_progress", JSON.stringify(mergedBundle.bookProgress));
+    }
+
+    // ── 第四步：上传合并后的数据到云端 ──
+    var jsonStr = JSON.stringify(mergedBundle);
+    uploadToCloud(uploadUrl, jsonStr, function(upErr) {
+      _syncInProgress = false;
+
+      if (upErr) {
+        if (callback) callback(upErr);
+        return;
+      }
+
+      // 记录最后同步时间
+      localStorage.setItem(CLOUD_LAST_SYNC_KEY, new Date().toISOString());
+
+      if (callback) callback(null, "同步合并成功");
+    });
+  });
+}
+
+/**
+ * 仅从云端恢复（不执行上传）
+ * @param {function} callback - callback(err, message)
+ */
+function restoreFromCloud(callback) {
+  var config = loadCloudConfig();
+  var downloadUrl = (config.download_url || "").trim();
+
+  if (!downloadUrl) {
+    if (callback) callback(new Error("未配置下载直链地址"));
+    return;
+  }
+
+  downloadFromCloud(downloadUrl, function(err, cloudBundle) {
+    if (err) {
+      if (callback) callback(err);
+      return;
+    }
+    if (!cloudBundle) {
+      if (callback) callback(new Error("云端没有备份文件"));
+      return;
+    }
+
+    // 恢复到本地
+    var cloudData = cloudBundle.appData || cloudBundle;
+    saveData(cloudData);
+    if (cloudBundle.bookProgress) {
+      localStorage.setItem("wenfeng_book_progress", JSON.stringify(cloudBundle.bookProgress));
+    }
+
+    if (callback) callback(null, "云端数据已恢复到本地");
+  });
+}
+
+/**
+ * 检测上传接口是否可访问
+ */
+function testUploadUrl(url, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("OPTIONS", url, true);
+  xhr.timeout = 15000;
+
+  xhr.onload = function() {
+    callback(true, "上传接口可访问 (HTTP " + xhr.status + ")");
+  };
+
+  xhr.onerror = function() {
+    // HTTP 4xx/5xx 也说明接口存在
+    callback(false, "上传接口无法访问");
+  };
+
+  xhr.ontimeout = function() {
+    callback(false, "上传接口检测超时");
+  };
+
+  xhr.send();
+}
+
+/**
+ * 检测下载直链是否可访问
+ */
+function testDownloadUrl(url, callback) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("HEAD", url, true);
+  xhr.timeout = 15000;
+
+  xhr.onload = function() {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      var size = xhr.getResponseHeader("Content-Length") || "未知";
+      callback(true, "下载直链可访问 (HTTP " + xhr.status + ", 大小: " + size + " 字节)");
+    } else {
+      callback(false, "下载直链异常 (HTTP " + xhr.status + ")");
+    }
+  };
+
+  xhr.onerror = function() {
+    // HEAD 可能不支持，尝试 GET
+    var xhr2 = new XMLHttpRequest();
+    xhr2.open("GET", url, true);
+    xhr2.timeout = 15000;
+    xhr2.onload = function() {
+      if (xhr2.status >= 200 && xhr2.status < 300) {
+        callback(true, "下载直链可访问 (HTTP " + xhr2.status + ")");
+      } else {
+        callback(false, "下载直链无法访问");
+      }
+    };
+    xhr2.onerror = function() {
+      callback(false, "下载直链无法访问");
+    };
+    xhr2.ontimeout = function() {
+      callback(false, "下载直链检测超时");
+    };
+    xhr2.send();
+  };
+
+  xhr.ontimeout = function() {
+    callback(false, "下载直链检测超时");
+  };
+
+  xhr.send();
+}
+
+/* ========================================
+   自动同步定时器
+   ======================================== */
+
+/**
+ * 启动自动同步定时器
+ * 每 interval_minutes 分钟执行一次 fullSync
+ */
+function startAutoSyncTimer() {
+  stopAutoSyncTimer();
+
+  var config = loadCloudConfig();
+  if (!config.auto_sync) return;
+  if (!isCloudConfigured()) return;
+
+  var intervalMs = (config.interval_minutes || 10) * 60 * 1000;
+
+  _autoSyncTimer = setInterval(function() {
+    // 静默同步，不弹 toast
+    fullSync(function(err, msg) {
+      if (err) {
+        console.warn("自动同步失败:", err.message);
+      } else {
+        console.log("自动同步完成:", msg);
+      }
+    });
+  }, intervalMs);
+
+  console.log("自动同步定时器已启动，间隔 " + (config.interval_minutes || 10) + " 分钟");
+}
+
+/**
+ * 停止自动同步定时器
+ */
+function stopAutoSyncTimer() {
+  if (_autoSyncTimer) {
+    clearInterval(_autoSyncTimer);
+    _autoSyncTimer = null;
+  }
+}
+
+/**
+ * 获取最后同步时间
+ */
+function getLastSyncTime() {
+  return localStorage.getItem(CLOUD_LAST_SYNC_KEY) || "";
+}
+
+/**
+ * 手动触发一次同步
+ */
+function doManualSync(callback) {
+  fullSync(function(err, msg) {
+    if (err) {
+      showToast("同步失败：" + err.message);
+    } else {
+      showToast("同步成功！" + msg);
+      refreshCheckinList();
+      updateQuoteBar();
+    }
+    if (callback) callback(err, msg);
   });
 }
