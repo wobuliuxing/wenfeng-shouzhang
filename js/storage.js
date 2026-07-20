@@ -113,7 +113,8 @@ function addTask(name, freq, note, customDay, signature) {
     customDay: customDay || "",
     signature: signature || "",
     records: [],
-    created: getTodayStr()
+    created: getTodayStr(),
+    updatedAt: Date.now()
   };
   data.tasks.push(task);
   saveData(data);
@@ -141,6 +142,7 @@ function updateTask(tid, name, freq, note, customDay, signature) {
       data.tasks[i].note = note || "";
       data.tasks[i].customDay = customDay || "";
       data.tasks[i].signature = signature || "";
+      data.tasks[i].updatedAt = Date.now();
       break;
     }
   }
@@ -187,6 +189,7 @@ function doCheckin(tid) {
   }
 
   task.records.push(today);
+  task.updatedAt = Date.now();
 
   // 计算连续打卡天数与梦想币
   var lastDate = data.lastCheckinDate;
@@ -214,6 +217,9 @@ function doCheckin(tid) {
   }
 
   saveData(data);
+
+  // ★ 打卡完成后触发 WebDAV 云同步
+  syncAfterCheckin();
 
   return {
     success: true,
@@ -575,7 +581,8 @@ function addDream(name, targetDays, reward) {
     reward: reward,
     isDefault: false,
     completed: false,
-    completedDate: ""
+    completedDate: "",
+    updatedAt: Date.now()
   };
   data.dreams.push(dream);
   saveData(data);
@@ -603,6 +610,7 @@ function updateDream(id, name, targetDays, reward) {
       data.dreams[i].name = name;
       data.dreams[i].targetDays = parseInt(targetDays);
       data.dreams[i].reward = reward;
+      data.dreams[i].updatedAt = Date.now();
       break;
     }
   }
@@ -624,6 +632,7 @@ function checkDreamCompletion() {
     if (!dream.completed && streak >= dream.targetDays) {
       dream.completed = true;
       dream.completedDate = getTodayStr();
+      dream.updatedAt = Date.now();
       newlyCompleted.push(dream);
     }
   });
@@ -777,7 +786,8 @@ function addNoComplaintChallenge(name, targetDays, note, signature) {
     signature: signature || "",
     records: [],       // { date: "2026-07-01", count: 5, times: [{ time: "09:30", note: "" }] }
     created: getTodayStr(),
-    completed: false
+    completed: false,
+    updatedAt: Date.now()
   };
   data.noComplaint.challenges.push(challenge);
   saveData(data);
@@ -832,8 +842,11 @@ function addComplaintRecord(cid) {
 
   todayRecord.count += 1;
   todayRecord.times.push({ time: timeStr, note: "" });
+  todayRecord.updatedAt = Date.now();
+  challenge.updatedAt = Date.now();
 
   saveData(data);
+  syncAfterCheckin();
   return challenge;
 }
 
@@ -859,6 +872,7 @@ function updateNoComplaintChallenge(cid, name, targetDays, note, signature) {
       data.noComplaint.challenges[i].targetDays = parseInt(targetDays) || 21;
       data.noComplaint.challenges[i].note = note || "";
       data.noComplaint.challenges[i].signature = signature || "";
+      data.noComplaint.challenges[i].updatedAt = Date.now();
       break;
     }
   }
@@ -891,7 +905,8 @@ function addOneMomentBook(name, prompt, reminderTime, signature) {
     reminderTime: reminderTime || "",
     signature: signature || "",
     records: [],       // { date: "2026-07-01", type: "checkin|coffee", data: {...} }
-    created: getTodayStr()
+    created: getTodayStr(),
+    updatedAt: Date.now()
   };
   data.oneMomentBook.books.push(book);
   saveData(data);
@@ -934,7 +949,9 @@ function addOneMomentBookRecord(bid, type, recordData) {
     created: new Date().toISOString()
   };
   book.records.push(record);
+  book.updatedAt = Date.now();
   saveData(data);
+  syncAfterCheckin();
   return record;
 }
 
@@ -984,7 +1001,8 @@ function addMomentBook(type, name, prompt, reminderTime, signature) {
     reminderTime: reminderTime || "",
     signature: signature || "",
     records: [],
-    created: getTodayStr()
+    created: getTodayStr(),
+    updatedAt: Date.now()
   };
   data[key].books.push(book);
   saveData(data);
@@ -1020,7 +1038,9 @@ function addMomentBookRecord(type, bid, recordType, recordData) {
     created: new Date().toISOString()
   };
   book.records.push(record);
+  book.updatedAt = Date.now();
   saveData(data);
+  syncAfterCheckin();
   return record;
 }
 
@@ -1045,6 +1065,7 @@ function updateMomentBook(type, bid, name, prompt, reminderTime, signature) {
       data[key].books[i].prompt = prompt || "";
       data[key].books[i].reminderTime = reminderTime || "";
       data[key].books[i].signature = signature || "";
+      data[key].books[i].updatedAt = Date.now();
       break;
     }
   }
@@ -1102,7 +1123,8 @@ function addSunshineEntry(name, content, action) {
     content: content || "",
     action: action || "",
     records: [],
-    created: getTodayStr()
+    created: getTodayStr(),
+    updatedAt: Date.now()
   };
   data.sunshine.entries.push(entry);
   saveData(data);
@@ -1125,7 +1147,9 @@ function addSunshineRecord(eid) {
       var today = getTodayStr();
       if (data.sunshine.entries[i].records.indexOf(today) >= 0) return data.sunshine.entries[i];
       data.sunshine.entries[i].records.push(today);
+      data.sunshine.entries[i].updatedAt = Date.now();
       saveData(data);
+      syncAfterCheckin();
       return data.sunshine.entries[i];
     }
   }
@@ -1150,6 +1174,7 @@ function updateSunshineEntry(eid, name, content, action) {
       data.sunshine.entries[i].name = name;
       data.sunshine.entries[i].content = content || "";
       data.sunshine.entries[i].action = action || "";
+      data.sunshine.entries[i].updatedAt = Date.now();
       break;
     }
   }

@@ -107,7 +107,7 @@ jobs:
 
       - name: 生成版本号
         run: |
-          VERSION="v5.0-$(date +%Y%m%d)"
+          VERSION="v5.1-$(date +%Y%m%d)"
           echo "VERSION_TAG=$VERSION" >> $GITHUB_ENV
           echo "版本号: $VERSION"
 

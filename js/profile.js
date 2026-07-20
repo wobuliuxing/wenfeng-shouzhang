@@ -189,16 +189,21 @@ function showCloudSyncSettings() {
   var config = loadCloudConfig();
 
   var html = '<div class="form-page">';
-  html += '<p style="font-size:13px;color:#999;margin-bottom:12px;text-align:center;line-height:1.6">配置中科院数据胶囊 S3 接口地址。<br>上传地址用于 PUT 上传，下载地址用于 GET 下载。<br>与电脑版使用相同的接口地址即可跨端同步。</p>';
+  html += '<p style="font-size:13px;color:#999;margin-bottom:12px;text-align:center;line-height:1.6">配置 WebDAV 云同步。<br>坚果云地址填 <b>https://dav.jianguoyun.com/dav/</b> 即可，系统自动定位"我的坚果云"文件夹。<br>文件名固定为 ka.db，与电脑版配置一致即可跨端同步。</p>';
 
   html += '<div class="form-group">';
-  html += '<label class="form-label" for="cs-upload">上传接口地址（PUT）</label>';
-  html += '<input class="form-input" id="cs-upload" type="url" placeholder="https://..." value="' + (config.upload_url || "") + '">';
+  html += '<label class="form-label" for="cs-url">WebDAV 地址</label>';
+  html += '<input class="form-input" id="cs-url" type="url" placeholder="https://dav.jianguoyun.com/dav/" value="' + (config.webdav_url || "") + '">';
   html += '</div>';
 
   html += '<div class="form-group">';
-  html += '<label class="form-label" for="cs-download">下载直链地址（GET）</label>';
-  html += '<input class="form-input" id="cs-download" type="url" placeholder="https://..." value="' + (config.download_url || "") + '">';
+  html += '<label class="form-label" for="cs-user">用户名</label>';
+  html += '<input class="form-input" id="cs-user" type="text" placeholder="账号" value="' + (config.username || "") + '">';
+  html += '</div>';
+
+  html += '<div class="form-group">';
+  html += '<label class="form-label" for="cs-pass">应用密码</label>';
+  html += '<input class="form-input" id="cs-pass" type="password" placeholder="应用密码（非登录密码）" value="' + (config.password || "") + '">';
   html += '</div>';
 
   html += '<div class="form-group">';
@@ -224,18 +229,20 @@ function showCloudSyncSettings() {
   setTimeout(function() {
     var saveBtn = pageEl.querySelector("#cs-save");
     if (saveBtn) saveBtn.addEventListener("click", function() {
-      var uploadUrl = pageEl.querySelector("#cs-upload").value.trim();
-      var downloadUrl = pageEl.querySelector("#cs-download").value.trim();
+      var webdavUrl = pageEl.querySelector("#cs-url").value.trim();
+      var username = pageEl.querySelector("#cs-user").value.trim();
+      var password = pageEl.querySelector("#cs-pass").value.trim();
       var interval = parseInt(pageEl.querySelector("#cs-interval").value) || 10;
 
-      if (!uploadUrl || !downloadUrl) {
-        showToast("请填写上传和下载地址");
+      if (!webdavUrl || !username || !password) {
+        showToast("请填写 WebDAV 地址、用户名、应用密码");
         return;
       }
 
       var newConfig = {
-        upload_url: uploadUrl,
-        download_url: downloadUrl,
+        webdav_url: webdavUrl,
+        username: username,
+        password: password,
         auto_sync: config.auto_sync !== false,
         interval_minutes: interval
       };
@@ -251,33 +258,25 @@ function showCloudSyncSettings() {
 
     var testBtn = pageEl.querySelector("#cs-test");
     if (testBtn) testBtn.addEventListener("click", function() {
-      var uploadUrl = pageEl.querySelector("#cs-upload").value.trim();
-      var downloadUrl = pageEl.querySelector("#cs-download").value.trim();
+      var webdavUrl = pageEl.querySelector("#cs-url").value.trim();
+      var username = pageEl.querySelector("#cs-user").value.trim();
+      var password = pageEl.querySelector("#cs-pass").value.trim();
       var resultEl = pageEl.querySelector("#cs-test-result");
 
-      if (!uploadUrl || !downloadUrl) {
-        resultEl.innerHTML = '<span style="color:#E64340">请先填写地址</span>';
+      if (!webdavUrl || !username || !password) {
+        resultEl.innerHTML = '<span style="color:#E64340">请先填写地址、用户名、应用密码</span>';
         return;
       }
 
-      resultEl.innerHTML = '<span style="color:#999">正在检测...</span>';
-      var results = [];
-      var done = 0;
+      resultEl.innerHTML = '<span style="color:#999">正在检测 WebDAV 连通性...</span>';
 
-      testUploadUrl(uploadUrl, function(ok, msg) {
-        results.push("上传：" + (ok ? "✓ " : "✗ ") + msg);
-        done++;
-        if (done === 2) {
-          resultEl.innerHTML = results.join("<br>");
-        }
-      });
-
-      testDownloadUrl(downloadUrl, function(ok, msg) {
-        results.push("下载：" + (ok ? "✓ " : "✗ ") + msg);
-        done++;
-        if (done === 2) {
-          resultEl.innerHTML = results.join("<br>");
-        }
+      var testConfig = {
+        webdav_url: webdavUrl,
+        username: username,
+        password: password
+      };
+      testWebDAV(testConfig, function(ok, msg) {
+        resultEl.innerHTML = '<span style="color:' + (ok ? "#07C160" : "#E64340") + '">' + (ok ? "✓ " : "✗ ") + msg + '</span>';
       });
     });
   }, 50);
@@ -288,7 +287,7 @@ function showCloudSyncSettings() {
  */
 function showCloudRestore() {
   if (!isCloudConfigured()) {
-    showToast("请先在云端同步设置中配置接口地址");
+    showToast("请先在云端同步设置中配置 WebDAV");
     return;
   }
 

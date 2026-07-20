@@ -1,14 +1,15 @@
 /* ========================================
-   籽芽手账 - S3 跨端云同步
-   适配中科院数据胶囊 S3 协议（PUT上传/GET下载）
-   替换原 CloudBase 方案，与电脑版 cloud_sync.py 逻辑一致
+   籽芽手账 - WebDAV 跨端云同步
+   PUT上传 / GET下载 + Basic Auth 认证
+   目标文件名 ka.db（内容为 JSON 文本）
+   与电脑版逻辑一致，跨端兼容
    ======================================== */
 
 /* ─── 配置键名 ─── */
 var CLOUD_CONFIG_KEY = "ziya_cloud_sync_config";
 var CLOUD_AUTO_SYNC_KEY = "ziya_cloud_auto_sync";
 var CLOUD_LAST_SYNC_KEY = "ziya_cloud_last_sync";
-var CLOUD_FILENAME = "ziya_backup.json";
+var CLOUD_FILENAME = "ka.db";
 
 /* ─── 自动同步定时器 ─── */
 var _autoSyncTimer = null;
@@ -24,11 +25,16 @@ var _syncInProgress = false;
 function loadCloudConfig() {
   try {
     var raw = localStorage.getItem(CLOUD_CONFIG_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      var cfg = JSON.parse(raw);
+      // 兼容旧版 S3 配置：如果存在 upload_url 但没有 webdav_url，返回空
+      if (cfg.webdav_url) return cfg;
+    }
   } catch (e) {}
   return {
-    upload_url: "",
-    download_url: "",
+    webdav_url: "",
+    username: "",
+    password: "",
     auto_sync: true,
     interval_minutes: 10
   };
@@ -63,7 +69,40 @@ function setCloudSyncEnabled(on) {
  */
 function isCloudConfigured() {
   var config = loadCloudConfig();
-  return !!(config.upload_url && config.download_url);
+  return !!(config.webdav_url && config.username && config.password);
+}
+
+/**
+ * 构造云端文件完整 URL
+ */
+function _getCloudFileUrl(config) {
+  var base = (config.webdav_url || "").trim();
+  if (!base) return "";
+  // 去掉末尾斜杠再拼接文件名
+  base = base.replace(/\/+$/, "");
+  // 坚果云：根目录 /dav/ 不能直接放文件，自动补"我的坚果云"文件夹
+  var mark = "dav.jianguoyun.com/dav";
+  var pos = base.indexOf(mark);
+  if (pos >= 0) {
+    var after = base.substring(pos + mark.length);
+    if (after === "" || after === "/") {
+      base = base.substring(0, pos + mark.length) + "/我的坚果云";
+    }
+  }
+  return encodeURI(base + "/" + CLOUD_FILENAME);
+}
+
+/**
+ * 构造 Basic Auth 请求头值
+ */
+function _buildAuthHeader(config) {
+  var raw = (config.username || "") + ":" + (config.password || "");
+  try {
+    // 处理可能的多字节字符
+    return "Basic " + btoa(unescape(encodeURIComponent(raw)));
+  } catch (e) {
+    return "Basic " + btoa(raw);
+  }
 }
 
 /* ========================================
@@ -72,7 +111,6 @@ function isCloudConfigured() {
 
 /**
  * 生成标准备份包
- * 格式与电脑版 cloud_sync.py make_backup_bundle() 一致
  */
 function makeBackupBundle() {
   var data = loadData();
@@ -82,7 +120,7 @@ function makeBackupBundle() {
   } catch (e) {}
 
   return {
-    version: "12.0",
+    version: "13.0",
     exportDate: new Date().toISOString(),
     appData: data,
     bookProgress: books,
@@ -93,12 +131,14 @@ function makeBackupBundle() {
 
 /* ========================================
    数据合并核心逻辑
-   移植自电脑版 cloud_sync.py merge_data()
+   支持 updatedAt 时间戳：同条记录以较新为准
+   无 updatedAt 的旧数据视为最旧（0），新数据优先
    ======================================== */
 
 /**
  * 合并打卡记录列表，按日期去重
  * 记录可以是字符串("2026-07-10")或字典({"date":"2026-07-10", ...})
+ * 同 date 记录：count 取大值（不丢打卡次数），其他字段按 updatedAt 较新为准
  */
 function _mergeRecords(localRecs, cloudRecs) {
   var merged = {};
@@ -110,18 +150,7 @@ function _mergeRecords(localRecs, cloudRecs) {
       merged[r] = r;
     } else if (r && typeof r === "object") {
       var key = r.date || String(r);
-      var existing = merged[key];
-      if (existing === undefined) {
-        merged[key] = r;
-      } else if (typeof existing === "string") {
-        merged[key] = r; // dict 比 string 信息更丰富
-      } else if (existing && typeof existing === "object") {
-        var subKey = r.count || 0;
-        var exCount = existing.count || 0;
-        if (subKey > exCount) {
-          merged[key] = r;
-        }
-      }
+      merged[key] = r;
     }
   }
 
@@ -129,34 +158,63 @@ function _mergeRecords(localRecs, cloudRecs) {
   for (var j = 0; j < cloudRecs.length; j++) {
     var r2 = cloudRecs[j];
     if (typeof r2 === "string") {
-      if (!merged[r2]) {
-        merged[r2] = r2;
-      }
-    } else if (r2 && typeof r2 === "object") {
-      var key2 = r2.date || String(r2);
-      var existing2 = merged[key2];
-      if (existing2 === undefined) {
-        merged[key2] = r2;
-      } else if (typeof existing2 === "string") {
-        merged[key2] = r2;
-      } else if (existing2 && typeof existing2 === "object") {
-        var exCount2 = existing2.count || 0;
-        var rCount2 = r2.count || 0;
-        // 时刻书可能有多条同日期记录（不同时间），用 time 做子键区分
-        if (r2.time || existing2.time) {
-          var rTime = r2.time || "";
-          var exTime = existing2.time || "";
-          if (rTime && rTime !== exTime) {
-            var compositeKey = key2 + "|" + rTime;
-            if (!merged[compositeKey]) {
-              merged[compositeKey] = r2;
-            }
-          } else if (rCount2 > exCount2) {
-            merged[key2] = r2;
-          }
-        } else if (rCount2 > exCount2) {
-          merged[key2] = r2;
+      if (!merged[r2]) merged[r2] = r2;
+      continue;
+    }
+    if (!r2 || typeof r2 !== "object") continue;
+
+    var key2 = r2.date || String(r2);
+    var existing = merged[key2];
+
+    if (existing === undefined) {
+      // 本地没有此日期，直接加入
+      merged[key2] = r2;
+      continue;
+    }
+
+    // 本地已有同日期记录
+    if (typeof existing === "string") {
+      // 本地是字符串，云端是对象，对象信息更丰富 → 用云端
+      merged[key2] = r2;
+      continue;
+    }
+    if (typeof r2 === "string") {
+      // 云端是字符串，本地是对象，保留本地对象
+      continue;
+    }
+
+    // 两边都是对象
+    var exUp = existing.updatedAt || 0;
+    var r2Up = r2.updatedAt || 0;
+
+    // count 累积值取大，避免丢打卡次数
+    var maxCount = Math.max(existing.count || 0, r2.count || 0);
+
+    // 时刻书可能有多条同日期不同时间的记录
+    if (r2.time || existing.time) {
+      var rTime = r2.time || "";
+      var exTime = existing.time || "";
+      if (rTime && rTime !== exTime) {
+        // 不同时间的记录，作为独立条目保留
+        var compositeKey = key2 + "|" + rTime;
+        if (!merged[compositeKey]) {
+          merged[compositeKey] = r2;
         }
+        continue;
+      }
+    }
+
+    if (r2Up > exUp) {
+      // 云端较新：以云端为基准，但 count 取大
+      var newer = _cloneObj(r2);
+      newer.count = maxCount;
+      merged[key2] = newer;
+    } else {
+      // 本地较新或相等：保留本地，count 取大，补云端独有字段
+      existing.count = maxCount;
+      for (var fk in r2) {
+        if (fk === "date" || fk === "count" || fk === "updatedAt") continue;
+        if (r2[fk] && !existing[fk]) existing[fk] = r2[fk];
       }
     }
   }
@@ -173,7 +231,9 @@ function _mergeRecords(localRecs, cloudRecs) {
 
 /**
  * 按 ID 合并两个列表
- * 同 ID 的项目合并内部字段，records 字段特殊处理
+ * 同 ID 项目：
+ *   - records 字段始终合并（两边新增打卡都保留）
+ *   - 其他字段按 updatedAt 较新为准；无 updatedAt 视为 0（最旧）
  */
 function _mergeListById(localList, cloudList) {
   var result = {};
@@ -184,7 +244,8 @@ function _mergeListById(localList, cloudList) {
     if (item && typeof item === "object" && item.id) {
       result[item.id] = _cloneObj(item);
     } else {
-      result[String(item)] = (item && typeof item === "object") ? _cloneObj(item) : item;
+      var sk = String(item);
+      result[sk] = (item && typeof item === "object") ? _cloneObj(item) : item;
     }
   }
 
@@ -195,21 +256,35 @@ function _mergeListById(localList, cloudList) {
       var iid = cItem.id;
       if (result[iid] && typeof result[iid] === "object") {
         var existing = result[iid];
-        // 合并 records
+        var exUp = existing.updatedAt || 0;
+        var clUp = cItem.updatedAt || 0;
+
+        // records 字段始终合并
+        var mergedRecs;
         if (cItem.records && existing.records) {
-          existing.records = _mergeRecords(
-            existing.records || [],
-            cItem.records || []
-          );
+          mergedRecs = _mergeRecords(existing.records || [], cItem.records || []);
+        } else if (cItem.records) {
+          mergedRecs = cItem.records;
+        } else {
+          mergedRecs = existing.records;
         }
-        // 其他字段：云端值优先（如果云端有非空值且本地为空）
-        for (var k in cItem) {
-          if (k === "records") continue;
-          if (cItem[k] && !existing[k]) {
-            existing[k] = cItem[k];
-          }
-          if (!(k in existing)) {
-            existing[k] = cItem[k];
+
+        if (clUp > exUp) {
+          // 云端较新：以云端为基准
+          var baseNew = _cloneObj(cItem);
+          baseNew.records = mergedRecs;
+          result[iid] = baseNew;
+        } else {
+          // 本地较新或相等：保留本地为基准，records 合并，补云端独有字段
+          existing.records = mergedRecs;
+          for (var k in cItem) {
+            if (k === "records" || k === "id") continue;
+            if (cItem[k] && !existing[k]) {
+              existing[k] = cItem[k];
+            }
+            if (!(k in existing)) {
+              existing[k] = cItem[k];
+            }
           }
         }
       } else {
@@ -241,7 +316,6 @@ function _cloneObj(obj) {
 
 /**
  * 合并本地数据和云端数据
- * 移植自 cloud_sync.py merge_data()
  */
 function mergeData(localData, cloudData) {
   if (!localData) return cloudData;
@@ -362,17 +436,25 @@ function mergeBooks(localBooks, cloudBooks) {
     if (merged[bid]) {
       var existing = merged[bid];
       if (existing && typeof existing === "object" && book && typeof book === "object") {
-        for (var k in book) {
-          if (k === "content") {
-            if (String(book[k]).length > String(existing[k] || "").length) {
+        // 有 updatedAt 按时间戳，否则按原逻辑（content 长度、position 行数）
+        var exUp = existing.updatedAt || 0;
+        var clUp = book.updatedAt || 0;
+        if (clUp > exUp) {
+          // 云端较新：以云端为准
+          merged[bid] = book;
+        } else {
+          for (var k in book) {
+            if (k === "content") {
+              if (String(book[k]).length > String(existing[k] || "").length) {
+                existing[k] = book[k];
+              }
+            } else if (k === "position") {
+              var exLine = parseInt(String(existing[k] || "0").split(/[.|]/)[0]) || 0;
+              var newLine = parseInt(String(book[k]).split(/[.|]/)[0]) || 0;
+              if (newLine > exLine) existing[k] = book[k];
+            } else if (book[k] && !existing[k]) {
               existing[k] = book[k];
             }
-          } else if (k === "position") {
-            var exLine = parseInt(String(existing[k] || "0").split(/[.|]/)[0]) || 0;
-            var newLine = parseInt(String(book[k]).split(/[.|]/)[0]) || 0;
-            if (newLine > exLine) existing[k] = book[k];
-          } else if (book[k] && !existing[k]) {
-            existing[k] = book[k];
           }
         }
       } else {
@@ -398,7 +480,7 @@ function mergeBackupBundles(localBundle, cloudBundle) {
   var mergedBooks = mergeBooks(localBooks, cloudBooks);
 
   return {
-    version: "12.0",
+    version: "13.0",
     exportDate: new Date().toISOString(),
     appData: mergedData,
     bookProgress: mergedBooks,
@@ -408,34 +490,44 @@ function mergeBackupBundles(localBundle, cloudBundle) {
 }
 
 /* ========================================
-   S3 上传/下载（XMLHttpRequest 实现）
+   WebDAV 上传/下载（XMLHttpRequest + Basic Auth）
    ======================================== */
 
 /**
- * 上传数据到云端 S3
- * @param {string} uploadUrl - S3 PUT 接口地址
- * @param {string} jsonData - JSON 字符串数据
+ * 上传数据到 WebDAV（PUT + Basic Auth）
+ * @param {object} config - 含 webdav_url/username/password
+ * @param {string} jsonData - JSON 字符串
  * @param {function} callback - callback(err)
  */
-function uploadToCloud(uploadUrl, jsonData, callback) {
+function uploadToCloud(config, jsonData, callback) {
+  var fileUrl = _getCloudFileUrl(config);
+  if (!fileUrl) {
+    if (callback) callback(new Error("未配置 WebDAV 地址"));
+    return;
+  }
+
   var xhr = new XMLHttpRequest();
-  xhr.open("PUT", uploadUrl, true);
+  xhr.open("PUT", fileUrl, true);
   xhr.setRequestHeader("Content-Type", "application/octet-stream");
+  xhr.setRequestHeader("Authorization", _buildAuthHeader(config));
 
   xhr.onload = function() {
+    // 200/201/204 都算成功（坚果云上传成功通常返回 201 或 200）
     if (xhr.status >= 200 && xhr.status < 300) {
-      callback(null);
+      if (callback) callback(null);
+    } else if (xhr.status === 401 || xhr.status === 403) {
+      if (callback) callback(new Error("认证失败：用户名或应用密码错误 (HTTP " + xhr.status + ")"));
     } else {
-      callback(new Error("上传失败 (HTTP " + xhr.status + ")"));
+      if (callback) callback(new Error("上传失败 (HTTP " + xhr.status + ")"));
     }
   };
 
   xhr.onerror = function() {
-    callback(new Error("上传失败：网络错误"));
+    if (callback) callback(new Error("上传失败：网络错误，请检查 WebDAV 地址"));
   };
 
   xhr.ontimeout = function() {
-    callback(new Error("上传超时"));
+    if (callback) callback(new Error("上传超时"));
   };
 
   xhr.timeout = 60000;
@@ -443,36 +535,45 @@ function uploadToCloud(uploadUrl, jsonData, callback) {
 }
 
 /**
- * 从云端 S3 下载数据
- * @param {string} downloadUrl - S3 GET 直链地址
+ * 从 WebDAV 下载数据（GET + Basic Auth）
+ * @param {object} config - 含 webdav_url/username/password
  * @param {function} callback - callback(err, data) data 为解析后的 JSON 对象
  */
-function downloadFromCloud(downloadUrl, callback) {
+function downloadFromCloud(config, callback) {
+  var fileUrl = _getCloudFileUrl(config);
+  if (!fileUrl) {
+    if (callback) callback(new Error("未配置 WebDAV 地址"));
+    return;
+  }
+
   var xhr = new XMLHttpRequest();
-  xhr.open("GET", downloadUrl, true);
+  xhr.open("GET", fileUrl, true);
+  xhr.setRequestHeader("Authorization", _buildAuthHeader(config));
 
   xhr.onload = function() {
     if (xhr.status >= 200 && xhr.status < 300) {
       try {
         var data = JSON.parse(xhr.responseText);
-        callback(null, data);
+        if (callback) callback(null, data);
       } catch (e) {
-        callback(new Error("云端备份解析失败"));
+        if (callback) callback(new Error("云端备份解析失败"));
       }
     } else if (xhr.status === 404) {
       // 云端还没有文件
-      callback(null, null);
+      if (callback) callback(null, null);
+    } else if (xhr.status === 401 || xhr.status === 403) {
+      if (callback) callback(new Error("认证失败：用户名或应用密码错误 (HTTP " + xhr.status + ")"));
     } else {
-      callback(new Error("下载失败 (HTTP " + xhr.status + ")"));
+      if (callback) callback(new Error("下载失败 (HTTP " + xhr.status + ")"));
     }
   };
 
   xhr.onerror = function() {
-    callback(new Error("下载失败：网络错误"));
+    if (callback) callback(new Error("下载失败：网络错误，请检查 WebDAV 地址"));
   };
 
   xhr.ontimeout = function() {
-    callback(new Error("下载超时"));
+    if (callback) callback(new Error("下载超时"));
   };
 
   xhr.timeout = 60000;
@@ -495,22 +596,14 @@ function fullSync(callback) {
   _syncInProgress = true;
 
   var config = loadCloudConfig();
-  var uploadUrl = (config.upload_url || "").trim();
-  var downloadUrl = (config.download_url || "").trim();
-
-  if (!uploadUrl) {
+  if (!isCloudConfigured()) {
     _syncInProgress = false;
-    if (callback) callback(new Error("未配置上传接口地址"));
-    return;
-  }
-  if (!downloadUrl) {
-    _syncInProgress = false;
-    if (callback) callback(new Error("未配置下载直链地址"));
+    if (callback) callback(new Error("未完整配置 WebDAV（需要地址、用户名、应用密码）"));
     return;
   }
 
   // ── 第一步：下载云端备份 ──
-  downloadFromCloud(downloadUrl, function(dlErr, cloudBundle) {
+  downloadFromCloud(config, function(dlErr, cloudBundle) {
     if (dlErr) {
       _syncInProgress = false;
       if (callback) callback(dlErr);
@@ -519,7 +612,7 @@ function fullSync(callback) {
 
     // 云端可能还没有文件
     if (!cloudBundle) {
-      cloudBundle = { appData: {}, bookProgress: {}, version: "12.0" };
+      cloudBundle = { appData: {}, bookProgress: {}, version: "13.0" };
     }
 
     // ── 第二步：合并本地数据 ──
@@ -535,7 +628,7 @@ function fullSync(callback) {
 
     // ── 第四步：上传合并后的数据到云端 ──
     var jsonStr = JSON.stringify(mergedBundle);
-    uploadToCloud(uploadUrl, jsonStr, function(upErr) {
+    uploadToCloud(config, jsonStr, function(upErr) {
       _syncInProgress = false;
 
       if (upErr) {
@@ -557,20 +650,18 @@ function fullSync(callback) {
  */
 function restoreFromCloud(callback) {
   var config = loadCloudConfig();
-  var downloadUrl = (config.download_url || "").trim();
-
-  if (!downloadUrl) {
-    if (callback) callback(new Error("未配置下载直链地址"));
+  if (!isCloudConfigured()) {
+    if (callback) callback(new Error("未完整配置 WebDAV"));
     return;
   }
 
-  downloadFromCloud(downloadUrl, function(err, cloudBundle) {
+  downloadFromCloud(config, function(err, cloudBundle) {
     if (err) {
       if (callback) callback(err);
       return;
     }
     if (!cloudBundle) {
-      if (callback) callback(new Error("云端没有备份文件"));
+      if (callback) callback(new Error("云端还没有备份文件"));
       return;
     }
 
@@ -586,69 +677,72 @@ function restoreFromCloud(callback) {
 }
 
 /**
- * 检测上传接口是否可访问
+ * 测试 WebDAV 连通性
+ * 通过 GET ka.db 探测：200/404 视为连通，401/403 视为认证错
+ * @param {object} config - 含 webdav_url/username/password
+ * @param {function} callback - callback(ok, message)
  */
-function testUploadUrl(url, callback) {
+function testWebDAV(config, callback) {
+  var fileUrl = _getCloudFileUrl(config);
+  if (!fileUrl) {
+    if (callback) callback(false, "请填写 WebDAV 地址");
+    return;
+  }
+  if (!config.username || !config.password) {
+    if (callback) callback(false, "请填写用户名和应用密码");
+    return;
+  }
+
   var xhr = new XMLHttpRequest();
-  xhr.open("OPTIONS", url, true);
-  xhr.timeout = 15000;
-
-  xhr.onload = function() {
-    callback(true, "上传接口可访问 (HTTP " + xhr.status + ")");
-  };
-
-  xhr.onerror = function() {
-    // HTTP 4xx/5xx 也说明接口存在
-    callback(false, "上传接口无法访问");
-  };
-
-  xhr.ontimeout = function() {
-    callback(false, "上传接口检测超时");
-  };
-
-  xhr.send();
-}
-
-/**
- * 检测下载直链是否可访问
- */
-function testDownloadUrl(url, callback) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("HEAD", url, true);
+  // 用 HEAD 探测，避免下载完整文件
+  xhr.open("HEAD", fileUrl, true);
+  xhr.setRequestHeader("Authorization", _buildAuthHeader(config));
   xhr.timeout = 15000;
 
   xhr.onload = function() {
     if (xhr.status >= 200 && xhr.status < 300) {
       var size = xhr.getResponseHeader("Content-Length") || "未知";
-      callback(true, "下载直链可访问 (HTTP " + xhr.status + ", 大小: " + size + " 字节)");
+      if (callback) callback(true, "WebDAV 可访问，云端已有备份 (大小: " + size + " 字节)");
+    } else if (xhr.status === 404) {
+      // 404 说明地址和认证都对，只是文件还不存在（首次使用）
+      if (callback) callback(true, "WebDAV 可访问，云端暂无备份（首次使用，同步后会自动创建）");
+    } else if (xhr.status === 401 || xhr.status === 403) {
+      if (callback) callback(false, "认证失败：用户名或应用密码错误 (HTTP " + xhr.status + ")");
+    } else if (xhr.status === 405) {
+      // 某些 WebDAV 不支持 HEAD，返回 405，视为地址可访问
+      if (callback) callback(true, "WebDAV 地址可访问（HEAD 不支持，但不影响同步）");
     } else {
-      callback(false, "下载直链异常 (HTTP " + xhr.status + ")");
+      if (callback) callback(false, "WebDAV 异常 (HTTP " + xhr.status + ")");
     }
   };
 
   xhr.onerror = function() {
-    // HEAD 可能不支持，尝试 GET
+    // HEAD 失败，尝试 PROPFIND（WebDAV 标准方法）
     var xhr2 = new XMLHttpRequest();
-    xhr2.open("GET", url, true);
+    xhr2.open("PROPFIND", fileUrl, true);
+    xhr2.setRequestHeader("Authorization", _buildAuthHeader(config));
+    xhr2.setRequestHeader("Depth", "0");
     xhr2.timeout = 15000;
     xhr2.onload = function() {
-      if (xhr2.status >= 200 && xhr2.status < 300) {
-        callback(true, "下载直链可访问 (HTTP " + xhr2.status + ")");
+      if (xhr2.status >= 200 && xhr2.status < 400) {
+        if (callback) callback(true, "WebDAV 可访问 (PROPFIND HTTP " + xhr2.status + ")");
+      } else if (xhr2.status === 401 || xhr2.status === 403) {
+        if (callback) callback(false, "认证失败：用户名或应用密码错误");
       } else {
-        callback(false, "下载直链无法访问");
+        if (callback) callback(false, "WebDAV 无法访问 (HTTP " + xhr2.status + ")");
       }
     };
     xhr2.onerror = function() {
-      callback(false, "下载直链无法访问");
+      if (callback) callback(false, "WebDAV 无法访问：网络错误，请检查地址");
     };
     xhr2.ontimeout = function() {
-      callback(false, "下载直链检测超时");
+      if (callback) callback(false, "WebDAV 检测超时");
     };
     xhr2.send();
   };
 
   xhr.ontimeout = function() {
-    callback(false, "下载直链检测超时");
+    if (callback) callback(false, "WebDAV 检测超时");
   };
 
   xhr.send();
@@ -672,7 +766,6 @@ function startAutoSyncTimer() {
   var intervalMs = (config.interval_minutes || 10) * 60 * 1000;
 
   _autoSyncTimer = setInterval(function() {
-    // 静默同步，不弹 toast
     fullSync(function(err, msg) {
       if (err) {
         console.warn("自动同步失败:", err.message);
@@ -715,5 +808,19 @@ function doManualSync(callback) {
       updateQuoteBar();
     }
     if (callback) callback(err, msg);
+  });
+}
+
+/**
+ * 打卡完成后触发同步（异步，不阻塞 UI）
+ */
+function syncAfterCheckin() {
+  if (!isCloudConfigured()) return;
+  fullSync(function(err, msg) {
+    if (err) {
+      console.warn("打卡后同步失败:", err.message);
+    } else {
+      console.log("打卡后同步完成:", msg);
+    }
   });
 }

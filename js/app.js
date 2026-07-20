@@ -24,7 +24,7 @@ document.addEventListener("DOMContentLoaded", function() {
   updateQuoteBar();
   switchTab("checkin");
 
-  // 初始化云同步（S3 方式，无需加载外部 SDK）
+  // 初始化云同步（WebDAV 方式，无需加载外部 SDK）
   if (getCloudSyncEnabled() && isCloudConfigured()) {
     // 首次打开时自动同步一次
     fullSync(function(err, msg) {
