@@ -717,15 +717,17 @@ function testWebDAV(config, callback) {
   };
 
   xhr.onerror = function() {
-    // HEAD 失败，尝试 PROPFIND（WebDAV 标准方法）
+    // HEAD 失败（常见于 WebView 跨域/CORS），改用 GET 探测
+    // GET 是标准方法，原生 HTTP 层兼容性最好
     var xhr2 = new XMLHttpRequest();
-    xhr2.open("PROPFIND", fileUrl, true);
+    xhr2.open("GET", fileUrl, true);
     xhr2.setRequestHeader("Authorization", _buildAuthHeader(config));
-    xhr2.setRequestHeader("Depth", "0");
     xhr2.timeout = 15000;
     xhr2.onload = function() {
-      if (xhr2.status >= 200 && xhr2.status < 400) {
-        if (callback) callback(true, "WebDAV 可访问 (PROPFIND HTTP " + xhr2.status + ")");
+      if (xhr2.status >= 200 && xhr2.status < 300) {
+        if (callback) callback(true, "WebDAV 可访问，云端已有备份");
+      } else if (xhr2.status === 404) {
+        if (callback) callback(true, "WebDAV 可访问，云端暂无备份（首次使用，同步后会自动创建）");
       } else if (xhr2.status === 401 || xhr2.status === 403) {
         if (callback) callback(false, "认证失败：用户名或应用密码错误");
       } else {

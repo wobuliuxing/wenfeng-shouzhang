@@ -8,6 +8,9 @@
     "backgroundColor": "FFFFFFFF"
   },
   "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
     "LocalNotifications": {
       "smallIcon": "ic_stat_icon",
       "iconColor": "#07C160",
